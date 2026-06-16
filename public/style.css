@@ -223,8 +223,8 @@ button, input, select, textarea {
   padding: var(--spacing-xl) var(--spacing-sm);
   background-image: url('/assets/rasoi_sakhi_hero_background_new.png');
   background-size: cover;
-  background-position: center top;
-  min-height: 65vh;
+  background-position: center;
+  min-height: 60vh;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -237,7 +237,7 @@ button, input, select, textarea {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(249, 246, 240, 0.45); /* Slightly stronger warm cream overlay for new vibrant hero image */
+  background-color: rgba(249, 246, 240, 0.35); /* Subtle warm cream overlay to guarantee text readability */
   z-index: 0;
 }
 
