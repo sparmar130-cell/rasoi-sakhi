@@ -6,6 +6,8 @@ data/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-*.jpeg
-*.jpg
-*.png
+# Ignore WhatsApp screenshots at root only, NOT the public/assets/ folder
+/*.jpeg
+/*.jpg
+/*.png
+
