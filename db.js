@@ -290,16 +290,7 @@ const defaultDatabase = {
   ]
 };
 
-// Ensure data folder exists
-const dataDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
-// Ensure database file exists and is populated
-if (!fs.existsSync(DB_PATH)) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(defaultDatabase, null, 2), 'utf-8');
-}
+// Note: Local file initialization is deferred until after Supabase check below.
 
 /**
  * Local DB helper functions
@@ -336,6 +327,17 @@ if (useSupabase) {
   console.log("Database Mode: Remote Supabase Connection Active");
 } else {
   console.log("Database Mode: Local JSON File Fallback Active");
+
+  // Only initialize local JSON storage when Supabase is NOT configured.
+  // On Vercel and similar serverless platforms, the project root is read-only,
+  // so we must skip all local FS writes when useSupabase is true.
+  const dataDir = path.dirname(DB_PATH);
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  if (!fs.existsSync(DB_PATH)) {
+    fs.writeFileSync(DB_PATH, JSON.stringify(defaultDatabase, null, 2), 'utf-8');
+  }
 }
 
 module.exports = {

@@ -1,9 +1,11 @@
 node_modules/
 .env
-data/db.json
-data/db.json.tmp
+data/
 .DS_Store
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.jpeg
+*.jpg
+*.png
