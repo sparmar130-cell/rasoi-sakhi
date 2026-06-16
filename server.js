@@ -391,7 +391,8 @@ app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
     baseWeight,
     weightOptions: weightOptions || [{ weight: baseWeight, price: Number(price) }],
     popular: !!popular,
-    image: id // Use id for icon generation
+    soldOut: !!req.body.soldOut,
+    image: req.body.image || id
   };
 
   try {
@@ -404,6 +405,34 @@ app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
   } catch (err) {
     console.error("Error creating product:", err);
     res.status(500).json({ error: "Failed to save product." });
+  }
+});
+
+// Upload Product Image
+app.post('/api/admin/upload-image', authenticateAdmin, async (req, res) => {
+  const { imageBase64, filename } = req.body;
+  if (!imageBase64 || !filename) {
+    return res.status(400).json({ error: "Missing image data or filename." });
+  }
+
+  try {
+    const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      return res.status(400).json({ error: "Invalid base64 image data format." });
+    }
+
+    const mimeType = matches[1];
+    const buffer = Buffer.from(matches[2], 'base64');
+    
+    // Generate clean filename to avoid collision
+    const fileExt = path.extname(filename) || '.png';
+    const cleanFilename = `${Date.now()}_${Math.random().toString(36).slice(-5)}${fileExt}`;
+
+    const imageUrl = await db.uploadProductImage(cleanFilename, buffer, mimeType);
+    res.json({ success: true, imageUrl });
+  } catch (err) {
+    console.error("Error in image upload API:", err);
+    res.status(500).json({ error: "Failed to upload image." });
   }
 });
 
@@ -422,7 +451,8 @@ app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
     baseWeight,
     weightOptions: weightOptions || [{ weight: baseWeight, price: Number(price) }],
     popular: !!popular,
-    image: req.params.id
+    soldOut: !!req.body.soldOut,
+    image: req.body.image || req.params.id
   };
 
   try {

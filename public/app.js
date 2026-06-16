@@ -264,6 +264,10 @@ function getVeggieSVG(id, strokeColor = 'var(--color-primary)', width = '100%', 
 
 // Helper to load generated veggie images or fallback to inline SVGs
 function getProductVisualHTML(imageName, name, cssStyles = 'width: 100%; height: 100%; object-fit: cover;') {
+  if (imageName && (imageName.startsWith('http') || imageName.startsWith('/assets/'))) {
+    return `<img src="${imageName}" alt="${name}" style="${cssStyles}">`;
+  }
+
   const knownImages = [
     'onion-diced', 'tomato-chopped', 'potato-cubes', 'bhindi-sliced', 'peas', 'pav-bhaji-pack', 'mixed-veg-pack',
     'cabbage-sliced', 'loki-chopped', 'cucumber-sliced', 'carrot-cubes', 'capsicum-chopped', 'biryani-pack', 'stir-fry-pack'
@@ -297,9 +301,36 @@ function renderProducts() {
   listEl.innerHTML = filtered.map(p => {
     const isPopular = p.popular ? `<span class="popular-badge">Popular</span>` : '';
     const visualHTML = getProductVisualHTML(p.image, p.name);
+    const baseWeightStr = p.weightOptions && p.weightOptions.length ? p.weightOptions[0].weight : p.baseWeight;
+    const cartItem = state.cart.find(item => item.id === p.id && item.weight === baseWeightStr);
+    const qty = cartItem ? cartItem.quantity : 0;
     
+    let actionHTML = '';
+    if (p.soldOut) {
+      actionHTML = `<span class="sold-out-badge">Sold Out</span>`;
+    } else if (qty > 0) {
+      actionHTML = `
+        <div class="product-qty-controller">
+          <button class="qty-btn dec" data-id="${p.id}" data-weight="${baseWeightStr}">-</button>
+          <span class="qty-val">${qty}</span>
+          <button class="qty-btn inc" data-id="${p.id}" data-weight="${baseWeightStr}">+</button>
+        </div>
+      `;
+    } else {
+      actionHTML = `
+        <div class="add-to-cart-trigger" data-id="${p.id}" aria-label="Add to cart">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </div>
+      `;
+    }
+
+    const soldOutClass = p.soldOut ? 'sold-out' : '';
+
     return `
-      <div class="product-item" data-id="${p.id}">
+      <div class="product-item ${soldOutClass}" data-id="${p.id}">
         <div class="product-visual">
           ${isPopular}
           ${visualHTML}
@@ -310,12 +341,7 @@ function renderProducts() {
           <p class="product-desc-short">${p.description}</p>
           <div class="product-purchase">
             <span class="product-price">₹${p.price}<span class="product-weight">/ ${p.baseWeight}</span></span>
-            <div class="add-to-cart-trigger" data-id="${p.id}" aria-label="Add to cart">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-            </div>
+            ${actionHTML}
           </div>
         </div>
       </div>
@@ -332,8 +358,36 @@ function renderPopularProducts() {
 
   container.innerHTML = popular.map(p => {
     const visualHTML = getProductVisualHTML(p.image, p.name);
+    const baseWeightStr = p.weightOptions && p.weightOptions.length ? p.weightOptions[0].weight : p.baseWeight;
+    const cartItem = state.cart.find(item => item.id === p.id && item.weight === baseWeightStr);
+    const qty = cartItem ? cartItem.quantity : 0;
+    
+    let actionHTML = '';
+    if (p.soldOut) {
+      actionHTML = `<span class="sold-out-badge">Sold Out</span>`;
+    } else if (qty > 0) {
+      actionHTML = `
+        <div class="product-qty-controller">
+          <button class="qty-btn dec" data-id="${p.id}" data-weight="${baseWeightStr}">-</button>
+          <span class="qty-val">${qty}</span>
+          <button class="qty-btn inc" data-id="${p.id}" data-weight="${baseWeightStr}">+</button>
+        </div>
+      `;
+    } else {
+      actionHTML = `
+        <div class="add-to-cart-trigger" data-id="${p.id}">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </div>
+      `;
+    }
+
+    const soldOutClass = p.soldOut ? 'sold-out' : '';
+
     return `
-      <div class="product-item" data-id="${p.id}">
+      <div class="product-item ${soldOutClass}" data-id="${p.id}">
         <div class="product-visual">
           <span class="popular-badge">Popular</span>
           ${visualHTML}
@@ -344,12 +398,7 @@ function renderPopularProducts() {
           <p class="product-desc-short">${p.description}</p>
           <div class="product-purchase">
             <span class="product-price">₹${p.price}<span class="product-weight">/ ${p.baseWeight}</span></span>
-            <div class="add-to-cart-trigger" data-id="${p.id}">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-            </div>
+            ${actionHTML}
           </div>
         </div>
       </div>
@@ -442,18 +491,33 @@ function setupEventListeners() {
     });
   }
 
-  // Delegate Product Item Clicking (opens detail modal)
+  // Delegate Product Item Clicking (opens detail modal or manages quantity)
   document.addEventListener('click', (e) => {
     const productCard = e.target.closest('.product-item');
     const isCartTrigger = e.target.closest('.add-to-cart-trigger');
+    const isQtyDec = e.target.closest('.product-qty-controller .qty-btn.dec');
+    const isQtyInc = e.target.closest('.product-qty-controller .qty-btn.inc');
+    const isQtyController = e.target.closest('.product-qty-controller');
     
-    if (productCard && !isCartTrigger) {
-      const prodId = productCard.dataset.id;
-      openProductDetails(prodId);
+    if (isQtyDec) {
+      e.stopPropagation();
+      const prodId = isQtyDec.dataset.id;
+      const weight = isQtyDec.dataset.weight;
+      updateCartQty(prodId, weight, -1);
+    } else if (isQtyInc) {
+      e.stopPropagation();
+      const prodId = isQtyInc.dataset.id;
+      const weight = isQtyInc.dataset.weight;
+      updateCartQty(prodId, weight, 1);
+    } else if (isQtyController) {
+      e.stopPropagation();
     } else if (isCartTrigger) {
       e.stopPropagation();
       const prodId = isCartTrigger.dataset.id;
       quickAddToCart(prodId);
+    } else if (productCard) {
+      const prodId = productCard.dataset.id;
+      openProductDetails(prodId);
     }
   });
 
@@ -651,6 +715,31 @@ function openProductDetails(id) {
     });
   });
 
+  // Handle Sold Out state in modal
+  const btn = document.getElementById('detail-add-to-cart-btn');
+  const qtyDec = document.getElementById('detail-qty-dec');
+  const qtyInc = document.getElementById('detail-qty-inc');
+  
+  if (product.soldOut) {
+    btn.innerText = "Sold Out";
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    btn.style.pointerEvents = 'none';
+    qtyDec.style.opacity = '0.5';
+    qtyDec.style.pointerEvents = 'none';
+    qtyInc.style.opacity = '0.5';
+    qtyInc.style.pointerEvents = 'none';
+  } else {
+    btn.innerText = "Add to Cart";
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+    qtyDec.style.opacity = '1';
+    qtyDec.style.pointerEvents = 'auto';
+    qtyInc.style.opacity = '1';
+    qtyInc.style.pointerEvents = 'auto';
+  }
+
   updateDetailPrice();
   document.getElementById('product-detail-modal').classList.add('open');
 }
@@ -753,6 +842,10 @@ function saveCart() {
 
 // Sync counts and totals
 function updateCartUI() {
+  // Sync quantity controllers on product cards
+  renderProducts();
+  renderPopularProducts();
+
   // Update Cart Badge counts
   const totalItemsCount = state.cart.reduce((sum, item) => sum + item.quantity, 0);
   document.querySelectorAll('.cart-count').forEach(el => {
@@ -944,6 +1037,23 @@ function setupAdminListeners() {
 
   // Product editor form submit
   document.getElementById('product-editor-form').addEventListener('submit', handleProductSaveSubmit);
+
+  // Image Upload Preview Listener
+  const fileInput = document.getElementById('edit-prod-image-file');
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const previewImg = document.getElementById('upload-preview-img');
+          previewImg.src = e.target.result;
+          document.getElementById('image-upload-preview').style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  }
 }
 
 // Check if admin is logged in securely
@@ -1231,8 +1341,8 @@ function renderAdminProductsTable() {
       <tr>
         <td>
           <div style="display:flex; align-items:center; gap: 8px;">
-            <div style="width: 28px; height: 28px;">${getVeggieSVG(p.image)}</div>
-            <strong>${p.name}</strong>
+            <div style="width: 28px; height: 28px; display:flex; align-items:center; justify-content:center;">${getProductVisualHTML(p.image, p.name)}</div>
+            <strong>${p.name}</strong> ${p.soldOut ? '<span style="font-size: 0.65rem; color: #D32F2F; background: #FFEBEE; padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: 6px;">Sold Out</span>' : ''}
           </div>
         </td>
         <td style="text-transform: capitalize;">${p.category.replace(/_/g, ' ')}</td>
@@ -1287,9 +1397,20 @@ function openProductEditor(productId = null) {
     document.getElementById('edit-prod-price').value = product.price;
     document.getElementById('edit-prod-weight').value = product.baseWeight;
     document.getElementById('edit-prod-popular').checked = product.popular;
+    document.getElementById('edit-prod-sold-out').checked = !!product.soldOut;
     document.getElementById('edit-prod-description').value = product.description || '';
     document.getElementById('edit-prod-freshness').value = product.freshnessInfo || '';
     document.getElementById('edit-prod-storage').value = product.storageInstructions || '';
+
+    // Prefill image preview if existing custom image
+    const previewContainer = document.getElementById('image-upload-preview');
+    const previewImg = document.getElementById('upload-preview-img');
+    if (product.image && (product.image.startsWith('http') || product.image.startsWith('/assets/'))) {
+      previewImg.src = product.image;
+      previewContainer.style.display = 'block';
+    } else {
+      previewContainer.style.display = 'none';
+    }
   } else {
     // New Mode
     document.getElementById('editor-title').innerText = "New Product";
@@ -1297,12 +1418,27 @@ function openProductEditor(productId = null) {
     document.getElementById('edit-prod-id').value = '';
     document.getElementById('edit-prod-id').readOnly = false;
     document.getElementById('edit-prod-popular').checked = false;
+    document.getElementById('edit-prod-sold-out').checked = false;
+    document.getElementById('image-upload-preview').style.display = 'none';
   }
+
+  // Reset file input
+  const fileInput = document.getElementById('edit-prod-image-file');
+  if (fileInput) fileInput.value = '';
 
   document.getElementById('product-editor-modal').classList.remove('hide');
 }
 
 window.openProductEditor = openProductEditor;
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = error => reject(error);
+  });
+}
 
 async function handleProductSaveSubmit(e) {
   e.preventDefault();
@@ -1310,6 +1446,43 @@ async function handleProductSaveSubmit(e) {
   const isNew = document.getElementById('edit-prod-is-new').value === 'true';
   const id = document.getElementById('edit-prod-id').value;
   
+  let imageVal = id;
+  if (!isNew) {
+    const existing = state.products.find(p => p.id === id);
+    if (existing) imageVal = existing.image;
+  }
+
+  // Check file upload
+  const fileInput = document.getElementById('edit-prod-image-file');
+  const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+  
+  if (file) {
+    try {
+      const base64Data = await fileToBase64(file);
+      const uploadRes = await fetch(`${API_BASE}/admin/upload-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.adminToken}`
+        },
+        body: JSON.stringify({
+          imageBase64: base64Data,
+          filename: file.name
+        })
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error("Image upload failed");
+      }
+
+      const uploadData = await uploadRes.json();
+      imageVal = uploadData.imageUrl;
+    } catch (err) {
+      console.error(err);
+      alert("Failed to upload product image. Storing product without updated image.");
+    }
+  }
+
   const payload = {
     id: id,
     name: document.getElementById('edit-prod-name').value,
@@ -1317,9 +1490,11 @@ async function handleProductSaveSubmit(e) {
     price: parseFloat(document.getElementById('edit-prod-price').value),
     baseWeight: document.getElementById('edit-prod-weight').value,
     popular: document.getElementById('edit-prod-popular').checked,
+    soldOut: document.getElementById('edit-prod-sold-out').checked,
     description: document.getElementById('edit-prod-description').value,
     freshnessInfo: document.getElementById('edit-prod-freshness').value,
     storageInstructions: document.getElementById('edit-prod-storage').value,
+    image: imageVal,
     weightOptions: [{
       weight: document.getElementById('edit-prod-weight').value,
       price: parseFloat(document.getElementById('edit-prod-price').value)

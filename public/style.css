@@ -9,8 +9,8 @@
   --color-bg-light: #F9F6F0; /* Warm linen cream base */
   --color-bg-pure: #FAF8F5; /* Softest warm off-white */
   
-  --color-text-dark: #1E1C1A; /* Warm dark ink text */
-  --color-text-muted: #5E5A54; /* Muted ink text */
+  --color-text-dark: #2B2927; /* Warm organic dark charcoal text */
+  --color-text-muted: #566259; /* Soft natural sage green-grey text */
   --color-text-light: #F3F0EC;
   
   --color-border-soft: #EBE6DF; /* Extremely subtle warm cream border */
@@ -22,6 +22,8 @@
   --color-primary: var(--color-accent);
   --color-primary-light: #F3F1ED;
   --color-primary-dark: #15221B;
+  
+  --color-heading: #12301D; /* Elegant deep organic pine/forest green for major titles */
 
   /* Typography Pairing: Serif + Sans-Serif */
   --font-heading: 'Cormorant Garamond', serif;
@@ -72,6 +74,7 @@ h1, h2, h3, h4, h5, h6 {
   font-weight: 500; /* Editorial heading weights */
   line-height: 1.2;
   letter-spacing: 0.04em; /* Increased letter-spacing for refined serif look */
+  color: var(--color-heading); /* Premium organic green heading */
 }
 
 a {
@@ -221,7 +224,7 @@ button, input, select, textarea {
 .hero {
   position: relative;
   padding: var(--spacing-xl) var(--spacing-sm);
-  background-image: url('/assets/rasoi_sakhi_hero_background_new.png');
+  background-image: url('/assets/rasoi_sakhi_hero_background_custom.png');
   background-size: cover;
   background-position: center;
   min-height: 60vh;
@@ -363,6 +366,47 @@ button, input, select, textarea {
   justify-content: center;
   flex-direction: column;
   align-items: center;
+}
+
+.hero .btn {
+  border-radius: 30px !important; /* Rounded pill style from screenshot */
+  text-transform: none !important; /* Mixed case from screenshot */
+  font-size: 0.9rem !important;
+  padding: 12px 28px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+  border: 1.5px solid #1E1C1A !important;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.hero .btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0,0,0,0.1);
+}
+
+.hero .btn:active {
+  transform: translateY(0);
+}
+
+.hero .btn-primary {
+  background-color: #EED14B !important; /* Yellow from screenshot */
+  color: #1E1C1A !important;
+}
+
+.hero .btn-primary:hover {
+  background-color: #E5C03B !important;
+  color: #1E1C1A !important;
+}
+
+.hero .btn-secondary {
+  background-color: #FFFFFF !important;
+  color: #1E1C1A !important;
+}
+
+.hero .btn-secondary:hover {
+  background-color: #F9F6F0 !important;
+  color: #1E1C1A !important;
 }
 
 /* --- TRUST INDICATORS --- */
@@ -555,6 +599,82 @@ button, input, select, textarea {
 .add-to-cart-trigger:hover {
   background-color: var(--color-text-dark);
   color: var(--color-bg-light);
+}
+
+.product-qty-controller {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--color-text-dark);
+  background-color: var(--color-bg-pure);
+  height: 36px;
+  border-radius: 20px; /* Rounded pill style from screenshot */
+  padding: 0 4px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  user-select: none;
+}
+
+.product-qty-controller .qty-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-text-dark);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  line-height: 1;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.product-qty-controller .qty-btn:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.product-qty-controller .qty-btn:active {
+  transform: scale(0.9);
+}
+
+.product-qty-controller .qty-val {
+  padding: 0 8px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text-dark);
+}
+
+/* Sold Out styling */
+.sold-out-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  border: 1px solid #C44C44;
+  color: #C44C44;
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background-color: transparent;
+  user-select: none;
+  border-radius: 0px;
+}
+
+.product-item.sold-out .product-visual img,
+.product-item.sold-out .product-visual svg {
+  filter: grayscale(80%) opacity(60%);
+  transition: var(--transition-smooth);
+}
+
+.product-item.sold-out .product-name {
+  color: var(--color-text-muted);
 }
 
 .grid-actions {

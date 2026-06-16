@@ -408,7 +408,8 @@ module.exports = {
       const productToSave = {
         ...product,
         price: Number(product.price),
-        popular: !!product.popular
+        popular: !!product.popular,
+        soldOut: !!product.soldOut
       };
       const { data, error } = await supabase.from('products').upsert(productToSave).select().single();
       if (error) {
@@ -482,6 +483,44 @@ module.exports = {
         return order;
       }
       return null;
+    }
+  },
+
+  uploadProductImage: async (filename, buffer, mimeType) => {
+    if (useSupabase) {
+      // Ensure 'product-images' bucket exists
+      const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+      if (!bucketsError && !buckets.find(b => b.name === 'product-images')) {
+        await supabase.storage.createBucket('product-images', {
+          public: true
+        });
+      }
+
+      const { data, error } = await supabase.storage
+        .from('product-images')
+        .upload(filename, buffer, {
+          contentType: mimeType,
+          upsert: true
+        });
+
+      if (error) {
+        console.error("Supabase Storage upload error:", error);
+        throw error;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('product-images')
+        .getPublicUrl(filename);
+
+      return publicUrlData.publicUrl;
+    } else {
+      const uploadDir = path.join(__dirname, 'public', 'assets', 'uploaded_products');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      const filepath = path.join(uploadDir, filename);
+      fs.writeFileSync(filepath, buffer);
+      return `/assets/uploaded_products/${filename}`;
     }
   }
 };
