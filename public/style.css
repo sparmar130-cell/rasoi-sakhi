@@ -639,54 +639,172 @@ button, input, select, textarea {
   line-height: 1.65;
 }
 
-/* --- TESTIMONIAL CARDS (BOX-LESS) --- */
-.testimonials {
-  background-color: var(--color-bg-light);
+/* --- THE 9-STEP PROCESS TIMELINE (HORIZONTAL WAVY) --- */
+.process-section {
+  background-color: var(--color-bg-pure);
   padding: var(--spacing-lg) var(--spacing-sm);
+  overflow: hidden;
 }
 
-.testimonials-slider {
-  max-width: 1000px;
+.timeline-scroll-container {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 20px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Hide scrollbar for clean look */
+}
+
+.timeline-scroll-container::-webkit-scrollbar {
+  display: none;
+}
+
+.timeline-scroll-wrapper {
+  display: flex;
+  width: 2700px; /* 9 steps * 300px = 2700px */
+  position: relative;
+  padding: 40px 0;
+}
+
+.wavy-line-svg {
+  position: absolute;
+  left: 0;
+  top: 61px; /* Centers with step icons */
+  width: 2700px;
+  height: 50px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.timeline-step {
+  width: 300px; /* Fixed step width */
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+  padding: 0 20px;
+}
+
+.step-num {
+  position: absolute;
+  top: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-heading);
+  font-size: 3.5rem;
+  font-weight: 300;
+  color: var(--color-primary-light);
+  opacity: 0.25;
+  z-index: -1;
+}
+
+.step-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-soft);
+  background-color: var(--color-bg-pure); /* Mask behind wavy line */
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+
+.step-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.step-title {
+  font-family: var(--font-heading);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-text-dark);
+  margin-bottom: 8px;
+}
+
+.step-desc {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+/* --- WHY CHOOSE US (PILLARS) --- */
+.why-us-section {
+  background-color: var(--color-bg-light);
+  padding: var(--spacing-xl) var(--spacing-sm);
+  border-top: 1px solid var(--color-border-soft);
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.why-us-grid {
+  max-width: 1200px;
   margin: 0 auto;
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--spacing-md);
+  gap: var(--spacing-lg);
   padding: var(--spacing-md) 0;
 }
 
-.testimonial-card {
+.why-us-item {
   text-align: center;
   padding: 0 var(--spacing-sm);
 }
 
-.quote-icon {
-  font-size: 2.5rem;
-  color: var(--color-primary-light);
-  line-height: 1;
+.why-us-title {
+  font-family: var(--font-heading);
+  font-size: 1.4rem;
+  font-weight: 500;
+  color: var(--color-primary);
+  margin-bottom: 12px;
 }
 
-.testimonial-quote {
-  font-size: 1.15rem;
-  font-style: italic;
+.why-us-desc {
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+  line-height: 1.65;
+}
+
+/* --- FAQ SECTION --- */
+.faq-section {
+  background-color: var(--color-bg-pure);
+  padding: var(--spacing-xl) var(--spacing-sm);
+}
+
+.faq-list {
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) 0;
+}
+
+.faq-item {
+  border-bottom: 1px solid var(--color-border-soft);
+  padding-bottom: var(--spacing-md);
+}
+
+.faq-item:last-child {
+  border-bottom: none;
+}
+
+.faq-question {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  font-weight: 700;
   color: var(--color-text-dark);
   margin-bottom: var(--spacing-sm);
 }
 
-.testimonial-stars {
-  color: var(--color-primary); /* Restrained stars in theme color */
-  margin-bottom: 8px;
-  font-size: 0.9rem;
-}
-
-.testimonial-author {
-  font-family: var(--font-heading);
-  font-weight: 700;
-  font-size: 1rem;
-}
-
-.testimonial-role {
-  font-size: 0.8rem;
+.faq-answer {
+  font-size: 0.95rem;
   color: var(--color-text-muted);
+  line-height: 1.65;
 }
 
 /* --- TEXT CONTENT LAYOUTS (ABOUT / HYGIENE) --- */
@@ -1750,54 +1868,8 @@ button, input, select, textarea {
     gap: var(--spacing-lg) var(--spacing-md);
   }
 
-  /* Timeline Process Flow */
-  .timeline-container {
-    padding: var(--spacing-xl) 0;
-  }
-
-  .timeline-track {
-    left: 50%;
-    transform: translateX(-50%);
-  }
-
-  .timeline-step {
-    width: 50%;
-    padding-left: 0;
-    margin-bottom: var(--spacing-xl);
-  }
-
-  .timeline-step:nth-child(odd) {
-    left: 0;
-    padding-right: 50px;
-    text-align: right;
-  }
-
-  .timeline-step:nth-child(even) {
-    left: 50%;
-    padding-left: 50px;
-    text-align: left;
-  }
-
-  .timeline-step:nth-child(odd) .step-icon {
-    left: auto;
-    right: -21px;
-  }
-
-  .timeline-step:nth-child(even) .step-icon {
-    left: -21px;
-  }
-
-  .timeline-step:nth-child(odd) .step-num {
-    left: auto;
-    right: 55px;
-  }
-
-  .timeline-step:nth-child(even) .step-num {
-    left: 55px;
-  }
-
-  /* Testimonials Grid */
-  .testimonials-slider {
+  /* Why Choose Us Grid Desktop */
+  .why-us-grid {
     grid-template-columns: repeat(3, 1fr);
     gap: var(--spacing-md);
   }
