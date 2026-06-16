@@ -434,13 +434,20 @@ function setupEventListeners() {
     link.addEventListener('click', (e) => {
       e.preventDefault();
       const target = link.getAttribute('data-target') || link.dataset.target;
+      const scrollTo = link.getAttribute('data-scroll'); // e.g. 'inline-shop'
       const href = link.getAttribute('href');
       
       if (target) {
         switchView(target);
-        
-        // If the link points to an anchor (like #process), scroll to it after switching
-        if (href && href.startsWith('#') && href.length > 1) {
+
+        // If data-scroll is set, scroll to that element after switching view
+        if (scrollTo) {
+          setTimeout(() => {
+            const scrollEl = document.getElementById(scrollTo);
+            if (scrollEl) scrollEl.scrollIntoView({ behavior: 'smooth' });
+          }, 150);
+        } else if (href && href.startsWith('#') && href.length > 1) {
+          // If the link points to an anchor (like #process), scroll to it
           const anchorEl = document.querySelector(href);
           if (anchorEl) {
             setTimeout(() => {
@@ -459,7 +466,9 @@ function setupEventListeners() {
 
   // Home CTA Buttons
   document.getElementById('hero-shop-btn').addEventListener('click', () => {
-    switchView('shop-section');
+    // Scroll to the inline shop catalog on the landing page
+    const inlineShop = document.getElementById('inline-shop');
+    if (inlineShop) inlineShop.scrollIntoView({ behavior: 'smooth' });
   });
   document.getElementById('hero-process-btn').addEventListener('click', () => {
     switchView('home-section');
@@ -467,9 +476,7 @@ function setupEventListeners() {
       document.getElementById('process').scrollIntoView({ behavior: 'smooth' });
     }, 100);
   });
-  document.getElementById('view-all-shop-btn').addEventListener('click', () => {
-    switchView('shop-section');
-  });
+  // view-all-shop-btn removed (popular products section commented out)
 
   // Shop Categories
   const filterTabs = document.querySelectorAll('.filter-tab');
@@ -526,10 +533,7 @@ function setupEventListeners() {
   document.getElementById('cart-toggle-btn').addEventListener('click', () => {
     cartDrawer.classList.add('open');
   });
-  document.getElementById('bottom-cart-btn').addEventListener('click', (e) => {
-    e.preventDefault();
-    cartDrawer.classList.add('open');
-  });
+  // bottom-cart-btn removed from DOM — cart is only in top header now
   document.getElementById('cart-close-btn').addEventListener('click', () => {
     cartDrawer.classList.remove('open');
   });
@@ -604,10 +608,16 @@ function setupEventListeners() {
     document.getElementById('checkout-upi-helper').classList.toggle('hide', !isUPI);
   });
 
-  // Admin login button trigger
+  // Admin login button triggers — header (desktop) + bottom nav (mobile)
   document.getElementById('admin-login-trigger').addEventListener('click', () => {
     switchView('admin-section');
   });
+  const adminHeaderBtn = document.getElementById('admin-header-btn');
+  if (adminHeaderBtn) {
+    adminHeaderBtn.addEventListener('click', () => {
+      switchView('admin-section');
+    });
+  }
 
   // Contact form submission
   const contactForm = document.getElementById('contact-us-form');
@@ -666,6 +676,17 @@ function switchView(targetId) {
 function handleHashRoute() {
   const hash = window.location.hash;
   if (!hash) return;
+
+  // #shop now lives inline on the home page
+  if (hash === '#shop') {
+    switchView('home-section');
+    setTimeout(() => {
+      const el = document.getElementById('inline-shop');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }, 150);
+    return;
+  }
+
   const targetId = `${hash.slice(1)}-section`;
   const view = document.getElementById(targetId);
   if (view) {
@@ -998,7 +1019,21 @@ async function handleCheckoutSubmit(e) {
 function setupAdminListeners() {
   // Login Form
   document.getElementById('admin-login-form').addEventListener('submit', handleAdminLogin);
-  
+
+  // Show / Hide password toggle
+  const togglePwdBtn = document.getElementById('toggle-password-btn');
+  if (togglePwdBtn) {
+    togglePwdBtn.addEventListener('click', () => {
+      const pwdInput = document.getElementById('admin-password');
+      const eyeShow = document.getElementById('eye-icon-show');
+      const eyeHide = document.getElementById('eye-icon-hide');
+      const isHidden = pwdInput.type === 'password';
+      pwdInput.type = isHidden ? 'text' : 'password';
+      eyeShow.style.display = isHidden ? 'none' : 'inline';
+      eyeHide.style.display = isHidden ? 'inline' : 'none';
+    });
+  }
+
   // Logout Form
   document.getElementById('admin-logout-btn').addEventListener('click', handleAdminLogout);
 
@@ -1337,8 +1372,9 @@ function renderAdminProductsTable() {
   }
 
   tbody.innerHTML = state.products.map(p => {
+    const safeId = p.id.replace(/'/g, "\\'");
     return `
-      <tr>
+      <tr id="prod-row-${p.id}">
         <td>
           <div style="display:flex; align-items:center; gap: 8px;">
             <div style="width: 28px; height: 28px; display:flex; align-items:center; justify-content:center;">${getProductVisualHTML(p.image, p.name)}</div>
@@ -1350,16 +1386,47 @@ function renderAdminProductsTable() {
         <td>${p.baseWeight}</td>
         <td>${p.popular ? 'Yes' : 'No'}</td>
         <td>
-          <button class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; border-radius: 4px;" onclick="openProductEditor('${p.id}')">Edit</button>
-          <button class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; border-radius: 4px; color: var(--color-accent); margin-left: 4px;" onclick="deleteProduct('${p.id}')">Delete</button>
+          <button class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; border-radius: 4px;" onclick="openProductEditor('${safeId}')">Edit</button>
+          <button id="del-btn-${p.id}" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; border-radius: 4px; color: #c0392b; border-color: #c0392b; margin-left: 4px;" onclick="deleteProduct('${safeId}', this)">Delete</button>
         </td>
       </tr>
     `;
   }).join('');
 }
 
-window.deleteProduct = async function(id) {
-  if (!confirm(`Are you sure you want to delete product "${id}"?`)) return;
+window.deleteProduct = async function(id, btn) {
+  // Two-step confirmation: first click shows "Confirm?", second click deletes
+  if (!btn) return;
+
+  if (btn.dataset.confirming !== 'true') {
+    // First click — ask for confirmation inline
+    btn.dataset.confirming = 'true';
+    btn.innerText = 'Confirm?';
+    btn.style.background = '#c0392b';
+    btn.style.color = 'white';
+    btn.style.borderColor = '#c0392b';
+    // Auto-reset after 4 seconds if not clicked again
+    setTimeout(() => {
+      if (btn.dataset.confirming === 'true') {
+        btn.dataset.confirming = 'false';
+        btn.innerText = 'Delete';
+        btn.style.background = '';
+        btn.style.color = '#c0392b';
+      }
+    }, 4000);
+    return;
+  }
+
+  // Second click — actually delete
+  btn.disabled = true;
+  btn.innerText = 'Deleting...';
+  btn.style.opacity = '0.6';
+
+  if (!state.adminToken) {
+    btn.innerText = 'Error: Not logged in';
+    console.error('Delete failed: no admin token in state');
+    return;
+  }
 
   try {
     const res = await fetch(`${API_BASE}/admin/products/${id}`, {
@@ -1367,15 +1434,30 @@ window.deleteProduct = async function(id) {
       headers: { 'Authorization': `Bearer ${state.adminToken}` }
     });
 
+    console.log('Delete response status:', res.status);
+
     if (res.ok) {
-      alert("Product deleted.");
-      fetchProducts(); // Refresh cache
-      setTimeout(loadAdminDashboard, 200); // Reload view tables
+      // Visually remove the row immediately
+      const row = document.getElementById(`prod-row-${id}`);
+      if (row) row.remove();
+      // Refresh products in state
+      await fetchProducts();
+      loadAdminDashboard();
     } else {
-      alert("Could not delete product.");
+      const errBody = await res.json().catch(() => ({}));
+      console.error('Delete API error:', res.status, errBody);
+      btn.disabled = false;
+      btn.innerText = `Failed (${res.status})`;
+      btn.style.opacity = '1';
+      btn.dataset.confirming = 'false';
     }
   } catch (err) {
-    console.error("Delete error:", err);
+    console.error('Delete fetch error:', err);
+    btn.disabled = false;
+    btn.innerText = 'Error!';
+    btn.style.opacity = '1';
+    btn.style.color = '#c0392b';
+    btn.dataset.confirming = 'false';
   }
 };
 
@@ -1517,8 +1599,8 @@ async function handleProductSaveSubmit(e) {
     if (res.ok) {
       alert("Product saved successfully!");
       document.getElementById('product-editor-modal').classList.add('hide');
-      fetchProducts(); // Refresh client catalog
-      setTimeout(loadAdminDashboard, 200); // Refresh stats and catalog tables
+      await fetchProducts(); // Refresh client catalog
+      loadAdminDashboard(); // Refresh stats and catalog tables
     } else {
       const errData = await res.json();
       alert(`Save failed: ${errData.error || 'Server error'}`);

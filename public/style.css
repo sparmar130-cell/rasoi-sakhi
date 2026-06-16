@@ -164,7 +164,7 @@ button, input, select, textarea {
   position: relative;
   cursor: pointer;
   padding: 8px;
-  border-radius: 0px; /* Sharp corners */
+  border-radius: 0px;
   color: var(--color-text-dark);
   transition: var(--transition-smooth);
   display: flex;
@@ -180,6 +180,11 @@ button, input, select, textarea {
 .cart-trigger-btn svg, .admin-trigger-btn svg {
   width: 24px;
   height: 24px;
+}
+
+/* Utility: hidden on mobile, shown on desktop */
+.desktop-only {
+  display: none;
 }
 
 .cart-count {
@@ -444,27 +449,28 @@ button, input, select, textarea {
 /* --- NO BOX DESIGN SYSTEM FOR SECTIONS --- */
 .section-header {
   text-align: center;
-  padding: var(--spacing-lg) var(--spacing-sm) var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-sm) var(--spacing-xs);
 }
 
 .section-tagline {
   font-family: var(--font-body);
   color: var(--color-primary);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 2px;
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .section-title {
-  font-size: 2.6rem;
+  font-size: 1.3rem;         /* Mobile: compact, fits 1 line */
   font-weight: 500;
   color: var(--color-text-dark);
-  letter-spacing: 0.02em;
-  margin-top: 0.5rem;
+  letter-spacing: 0.01em;
+  margin-top: 0.3rem;
   margin-bottom: var(--spacing-sm);
+  line-height: 1.3;
 }
 
 /* --- PRODUCT GRID (NO BOUNDING BOXES) --- */
@@ -788,8 +794,8 @@ button, input, select, textarea {
 
 .timeline-step {
   position: relative;
-  padding-left: 80px;
-  margin-bottom: var(--spacing-md);
+  padding-left: 70px;      /* Reduced from 80px — tighter on phone */
+  margin-bottom: var(--spacing-sm); /* Reduced from md — less gap between steps */
   z-index: 1;
   display: flex;
   flex-direction: column;
@@ -804,9 +810,9 @@ button, input, select, textarea {
 .step-num {
   position: absolute;
   left: 70px;
-  top: -15px;
+  top: -10px;
   font-family: var(--font-heading);
-  font-size: 2.2rem;
+  font-size: 1.5rem;       /* Reduced from 2.2rem — less overwhelming on phones */
   font-weight: 300;
   color: var(--color-primary-light);
   opacity: 0.35;
@@ -815,22 +821,22 @@ button, input, select, textarea {
 
 .step-icon {
   position: absolute;
-  left: 28px; /* Centered along the 40px wide vertical wavy path (20px + 20px offset) */
+  left: 28px;
   top: 4px;
-  width: 24px;
-  height: 24px;
+  width: 20px;             /* Slightly smaller icon on phones */
+  height: 20px;
   color: var(--color-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: transparent; /* Strictly no box background */
-  border: none; /* Strictly no box borders */
-  box-shadow: none; /* Strictly no box shadows */
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 .step-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;             /* Slightly smaller SVG */
+  height: 18px;
 }
 
 .step-content {
@@ -839,17 +845,18 @@ button, input, select, textarea {
 
 .step-title {
   font-family: var(--font-heading);
-  font-size: 1.25rem;
+  font-size: 1rem;         /* Reduced from 1.25rem — phone-friendly */
   font-weight: 700;
   color: var(--color-text-dark);
-  margin-bottom: 6px;
+  margin-bottom: 4px;      /* Tighter spacing */
 }
 
 .step-desc {
-  font-size: 0.9rem;
+  font-size: 0.78rem;      /* Slightly smaller than 0.9rem — more compact on phones */
   color: var(--color-text-muted);
-  line-height: 1.6;
+  line-height: 1.55;
 }
+
 
 /* --- WHY CHOOSE US (PILLARS) --- */
 .why-us-section {
@@ -1086,7 +1093,13 @@ button, input, select, textarea {
 .form-status.success { color: var(--color-primary); }
 .form-status.error { color: var(--color-accent); }
 
-/* --- SHOP VIEW FILTER STYLING --- */
+
+/* --- INLINE SHOP SECTION (shop on landing page) --- */
+.inline-shop-section {
+  padding: var(--spacing-xl) 0;
+  background: var(--color-bg);
+}
+
 .shop-controls {
   max-width: 1200px;
   margin: 0 auto;
@@ -1095,6 +1108,7 @@ button, input, select, textarea {
   flex-direction: column;
   gap: var(--spacing-sm);
 }
+
 
 .search-box {
   position: relative;
@@ -1913,6 +1927,21 @@ button, input, select, textarea {
 @media (min-width: 768px) {
   body {
     padding-bottom: 0; /* Remove bottom nav space for desktop */
+  }
+
+  /* Section headings: restore larger size on desktop */
+  .section-title {
+    font-size: 2.2rem;
+    letter-spacing: 0.02em;
+  }
+
+  .section-header {
+    padding: var(--spacing-lg) var(--spacing-sm) var(--spacing-sm);
+  }
+
+  /* Show desktop-only elements (admin btn in header) on ≥768px */
+  .desktop-only {
+    display: flex;
   }
 
   /* Header adjustments */

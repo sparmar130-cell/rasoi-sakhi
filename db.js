@@ -483,11 +483,18 @@ module.exports = {
 
   deleteProduct: async (id) => {
     if (useSupabase) {
-      const { error } = await supabase.from('products').delete().eq('id', id);
+      // Note: Use .select() to force Supabase JS client v2 to resolve the promise
+      // Without it, the delete call can hang indefinitely in some environments
+      const { error, data } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', id)
+        .select('id');
       if (error) {
         console.error("Supabase error deleting product:", error);
         return false;
       }
+      // data will be an array of deleted rows, or empty if not found
       return true;
     } else {
       const db = readDB();
