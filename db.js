@@ -352,10 +352,31 @@ module.exports = {
         console.error(`Supabase error fetching ${name}:`, error);
         throw error;
       }
+      if (name === 'products' && data) {
+        return data.map(p => {
+          const isSoldOut = p.image && p.image.endsWith('_soldout');
+          return {
+            ...p,
+            soldOut: isSoldOut,
+            image: isSoldOut ? p.image.replace(/_soldout$/, '') : p.image
+          };
+        });
+      }
       return data || [];
     } else {
       const db = readDB();
-      return db[name] || [];
+      const list = db[name] || [];
+      if (name === 'products') {
+        return list.map(p => {
+          const isSoldOut = p.image && p.image.endsWith('_soldout');
+          return {
+            ...p,
+            soldOut: isSoldOut || !!p.soldOut,
+            image: isSoldOut ? p.image.replace(/_soldout$/, '') : p.image
+          };
+        });
+      }
+      return list;
     }
   },
 
@@ -404,28 +425,59 @@ module.exports = {
   },
 
   updateProduct: async (product) => {
+    const isSoldOut = !!product.soldOut;
+    let imageEncoded = product.image || product.id;
+    if (isSoldOut && !imageEncoded.endsWith('_soldout')) {
+      imageEncoded = imageEncoded + '_soldout';
+    } else if (!isSoldOut && imageEncoded.endsWith('_soldout')) {
+      imageEncoded = imageEncoded.replace(/_soldout$/, '');
+    }
+
     if (useSupabase) {
       const productToSave = {
-        ...product,
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        description: product.description || "",
+        freshnessInfo: product.freshnessInfo || "",
+        storageInstructions: product.storageInstructions || "",
         price: Number(product.price),
+        baseWeight: product.baseWeight,
+        weightOptions: product.weightOptions,
         popular: !!product.popular,
-        soldOut: !!product.soldOut
+        image: imageEncoded
       };
       const { data, error } = await supabase.from('products').upsert(productToSave).select().single();
       if (error) {
         console.error("Supabase error updating product:", error);
         return null;
       }
-      return data;
+      return {
+        ...data,
+        soldOut: isSoldOut,
+        image: isSoldOut ? data.image.replace(/_soldout$/, '') : data.image
+      };
     } else {
       const db = readDB();
+      const productToSave = {
+        ...product,
+        image: imageEncoded,
+        soldOut: isSoldOut
+      };
       const index = db.products.findIndex(p => p.id === product.id);
       if (index !== -1) {
-        db.products[index] = { ...db.products[index], ...product };
+        db.products[index] = productToSave;
       } else {
-        db.products.push(product);
+        db.products.push(productToSave);
       }
-      return writeDB(db) ? product : null;
+      if (writeDB(db)) {
+        return {
+          ...productToSave,
+          soldOut: isSoldOut,
+          image: isSoldOut ? productToSave.image.replace(/_soldout$/, '') : productToSave.image
+        };
+      }
+      return null;
     }
   },
 
