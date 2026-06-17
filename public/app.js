@@ -1050,8 +1050,8 @@ function openWhatsApp(url) {
 }
 
 function completeCheckoutFlow(formElement, customerDetails, whatsappUrl) {
-  // Save customer details in localStorage for autofill next time
-  localStorage.setItem('rs_customer_details', JSON.stringify(customerDetails));
+  // Save all form details (including slot & payment) to localStorage for autofill next time
+  saveFormDetailsToLocalStorage();
 
   // Clear cart
   state.cart = [];
@@ -1147,10 +1147,12 @@ async function handleCheckoutSubmit(e) {
     if (responseData.success) {
       const customerDetails = {
         name: orderPayload.customerName,
-        phone: orderPayload.customerPhone,
+        phone: rawPhone, // store without country code prefix for clean prefill
         email: orderPayload.customerEmail,
         address: orderPayload.deliveryAddress,
-        landmark: orderPayload.landmark
+        landmark: orderPayload.landmark,
+        slot: document.getElementById('cust-slot')?.value || '',
+        payment: document.getElementById('cust-payment')?.value || ''
       };
 
       if (responseData.paymentRequired) {
