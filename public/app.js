@@ -15,7 +15,9 @@ let state = {
   selectedWeight: null,
   selectedQty: 1,
   adminToken: localStorage.getItem('rs_admin_token') || null,
-  adminSettings: null
+  adminSettings: null,
+  knownOrderIds: new Set(),
+  hasInitiallyLoadedOrders: false
 };
 
 // --- INITIALIZATION ---
@@ -1009,46 +1011,239 @@ async function handleCheckoutSubmit(e) {
     const responseData = await res.json();
     
     if (responseData.success) {
-      // Save customer details in localStorage for autofill next time
-      const customerDetails = {
-        name: orderPayload.customerName,
-        phone: orderPayload.customerPhone,
-        email: orderPayload.customerEmail,
-        address: orderPayload.deliveryAddress,
-        landmark: orderPayload.landmark
+      const finalizeOrder = (formEl, whatsappUrl) => {
+        // Save customer details in localStorage for autofill next time
+        const customerDetails = {
+          name: orderPayload.customerName,
+          phone: orderPayload.customerPhone,
+          email: orderPayload.customerEmail,
+          address: orderPayload.deliveryAddress,
+          landmark: orderPayload.landmark
+        };
+        localStorage.setItem('rs_customer_details', JSON.stringify(customerDetails));
+
+        // Clear cart
+        state.cart = [];
+        saveCart();
+        updateCartUI();
+        
+        // Close Cart Drawer
+        document.getElementById('cart-drawer').classList.remove('open');
+        
+        // Reset form but immediately prefill the saved details back
+        formEl.reset();
+        prefillCheckoutForm();
+
+        // Notify User
+        alert("Order placed successfully!\nWe are now redirecting you to WhatsApp to confirm your slot.");
+
+        // Open WhatsApp automatically in a new window/tab
+        window.open(whatsappUrl, '_blank');
       };
-      localStorage.setItem('rs_customer_details', JSON.stringify(customerDetails));
 
-      // Clear cart
-      state.cart = [];
-      saveCart();
-      updateCartUI();
-      
-      // Close Cart Drawer
-      document.getElementById('cart-drawer').classList.remove('open');
-      
-      // Reset form but immediately prefill the saved details back
-      e.target.reset();
-      prefillCheckoutForm();
+      if (responseData.paymentRequired) {
+        checkoutBtn.innerText = "Awaiting payment...";
+        
+        const options = {
+          key: responseData.keyId,
+          amount: responseData.amount,
+          currency: responseData.currency,
+          name: "Rasoi Sakhi",
+          description: "Vegetables Order Payment",
+          order_id: responseData.razorpayOrderId,
+          prefill: {
+            name: orderPayload.customerName,
+            contact: orderPayload.customerPhone,
+            email: orderPayload.customerEmail
+          },
+          theme: {
+            color: "#4CAF50"
+          },
+          handler: async function (response) {
+            checkoutBtn.innerText = "Verifying payment...";
+            try {
+              // Wait and verify payment on the backend
+              const verifyRes = await fetch(`${API_BASE}/orders/${responseData.orderId}/verify-payment`);
+              const verifyData = await verifyRes.json();
+              if (verifyRes.ok && verifyData.verified) {
+                finalizeOrder(e.target, responseData.whatsappUrl);
+              } else {
+                alert("Payment verification pending. We will contact you on WhatsApp to confirm.");
+                finalizeOrder(e.target, responseData.whatsappUrl);
+              }
+            } catch (err) {
+              console.error("Payment verification failed on client:", err);
+              finalizeOrder(e.target, responseData.whatsappUrl);
+            }
+          },
+          modal: {
+            ondismiss: function () {
+              checkoutBtn.disabled = false;
+              checkoutBtn.innerText = "Order Now via WhatsApp & Excel";
+            }
+          }
+        };
 
-      // Notify User
-      alert("Order placed successfully!\nWe are now redirecting you to WhatsApp to confirm your slot.");
-
-      // Open WhatsApp automatically in a new window/tab
-      window.open(responseData.whatsappUrl, '_blank');
+        const rzp1 = new Razorpay(options);
+        rzp1.open();
+      } else {
+        // COD Flow
+        finalizeOrder(e.target, responseData.whatsappUrl);
+      }
     }
   } catch (err) {
     console.error("Order processing error:", err);
     alert("There was an issue processing your order. Please try again or call support.");
   } finally {
-    checkoutBtn.disabled = false;
-    checkoutBtn.innerText = "Order Now via WhatsApp & Excel";
+    // Only re-enable button if payment is not required (since Razorpay handles its own buttons or ondismiss)
+    const needsBypass = typeof responseData === 'undefined' || !responseData || !responseData.paymentRequired;
+    if (needsBypass) {
+      checkoutBtn.disabled = false;
+      checkoutBtn.innerText = "Order Now via WhatsApp & Excel";
+    }
   }
 }
 
 // ==========================================================================
 // ADMIN DASHBOARD CLIENT-SIDE MODULE
 // ==========================================================================
+
+function playNotificationSound() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    
+    const playTone = (freq, startTime, duration) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      
+      gain.gain.setValueAtTime(0.08, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    };
+    
+    // Play sweet two-tone chime (C5 then E5)
+    playTone(523.25, ctx.currentTime, 0.15);
+    playTone(659.25, ctx.currentTime + 0.12, 0.35);
+  } catch (e) {
+    console.error("Failed to play chime notification:", e);
+  }
+}
+
+function showNewOrderToast(order) {
+  let container = document.getElementById('admin-toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'admin-toast-container';
+    container.style.cssText = 'position: fixed; top: 24px; right: 24px; z-index: 10000; display: flex; flex-direction: column; gap: 12px;';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'admin-new-order-toast';
+  toast.style.cssText = `
+    background: #ffffff;
+    color: var(--color-text-dark);
+    padding: 16px 20px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+    border-left: 5px solid var(--color-accent);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 300px;
+    max-width: 380px;
+    animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    cursor: pointer;
+    border-top: 1px solid rgba(0,0,0,0.03);
+    border-right: 1px solid rgba(0,0,0,0.03);
+    border-bottom: 1px solid rgba(0,0,0,0.03);
+  `;
+
+  toast.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <strong style="color: var(--color-accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.8px; display: inline-flex; align-items: center; gap: 6px;">
+        <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background-color: var(--color-accent); animation: pulse 1s infinite;"></span>
+        New Order Alert
+      </strong>
+      <span style="font-size: 1.1rem; font-weight: bold; color: var(--color-text-muted); cursor: pointer; transition: color 0.2s;" onclick="event.stopPropagation(); this.parentElement.parentElement.remove()">&times;</span>
+    </div>
+    <div style="font-weight: 700; font-size: 1rem; color: var(--color-text-dark); margin-top: 4px;">${order.customerName}</div>
+    <div style="font-size: 0.8rem; color: var(--color-text-muted);">ID: <strong>${order.id}</strong> • Total: <strong>₹${order.totalAmount}</strong></div>
+  `;
+
+  toast.addEventListener('click', () => {
+    // Focus search on this order
+    const searchInput = document.getElementById('orders-search-filter');
+    if (searchInput) {
+      searchInput.value = order.id;
+      renderAdminOrdersTable();
+    }
+    toast.style.animation = 'fadeOut 0.25s ease-out forwards';
+    setTimeout(() => toast.remove(), 250);
+  });
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    if (toast.parentElement) {
+      toast.style.animation = 'fadeOut 0.4s ease-out forwards';
+      setTimeout(() => toast.remove(), 400);
+    }
+  }, 7500);
+}
+
+let adminPollInterval = null;
+
+function startAdminPolling() {
+  stopAdminPolling();
+  // Poll every 10 seconds for real-time responsiveness
+  adminPollInterval = setInterval(() => {
+    if (state.adminToken) {
+      loadAdminOrders();
+    }
+  }, 10000);
+}
+
+function stopAdminPolling() {
+  if (adminPollInterval) {
+    clearInterval(adminPollInterval);
+    adminPollInterval = null;
+  }
+}
+
+async function markAsRead(orderId) {
+  try {
+    const res = await fetch(`${API_BASE}/admin/orders/${orderId}/read`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${state.adminToken}`
+      }
+    });
+    if (res.ok) {
+      const order = adminOrders.find(o => o.id === orderId);
+      if (order) {
+        order.isRead = true;
+        renderAdminOrdersTable();
+      }
+    } else {
+      alert("Failed to mark order as read.");
+    }
+  } catch (err) {
+    console.error("Error marking order as read:", err);
+  }
+}
+
+window.markAsRead = markAsRead;
 
 function setupAdminListeners() {
   // Login Form
@@ -1182,6 +1377,7 @@ async function handleAdminLogin(e) {
 function handleAdminLogout() {
   state.adminToken = null;
   localStorage.removeItem('rs_admin_token');
+  stopAdminPolling();
   
   // UI views update
   document.getElementById('admin-dashboard-panel').classList.add('hide');
@@ -1196,6 +1392,7 @@ function showAdminDashboard() {
   document.getElementById('admin-auth-panel').classList.add('hide');
   document.getElementById('admin-dashboard-panel').classList.remove('hide');
   loadAdminDashboard();
+  startAdminPolling();
 }
 
 async function loadAdminDashboard() {
@@ -1311,10 +1508,42 @@ async function loadAdminOrders() {
       headers: { 'Authorization': `Bearer ${state.adminToken}` }
     });
     if (res.ok) {
-      adminOrders = await res.json();
+      const orders = await res.json();
+      
+      let hasNewUnread = false;
+      orders.forEach(o => {
+        if (!state.knownOrderIds.has(o.id)) {
+          state.knownOrderIds.add(o.id);
+          // Only play notification/show toast if we had already loaded orders once before
+          if (state.hasInitiallyLoadedOrders) {
+            hasNewUnread = true;
+            showNewOrderToast(o);
+          }
+        }
+      });
+
+      if (hasNewUnread) {
+        playNotificationSound();
+      }
+
+      state.hasInitiallyLoadedOrders = true;
+      adminOrders = orders;
       renderAdminOrdersTable();
     }
   } catch (err) { console.error("Error loading orders:", err); }
+}
+
+function updateUnreadOrdersCount() {
+  const unreadCount = adminOrders.filter(o => !o.isRead).length;
+  const badge = document.getElementById('admin-orders-unread-badge');
+  if (badge) {
+    if (unreadCount > 0) {
+      badge.innerText = unreadCount;
+      badge.classList.remove('hide');
+    } else {
+      badge.classList.add('hide');
+    }
+  }
 }
 
 function renderAdminOrdersTable() {
@@ -1335,6 +1564,7 @@ function renderAdminOrdersTable() {
 
   if (!filtered.length) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--color-text-muted);">No orders found.</td></tr>`;
+    updateUnreadOrdersCount();
     return;
   }
 
@@ -1350,9 +1580,30 @@ function renderAdminOrdersTable() {
       </select>
     `;
 
+    const newBadge = o.isRead ? '' : `<span class="new-badge-indicator" style="background: var(--color-accent); color: white; padding: 2px 6px; font-size: 0.65rem; border-radius: 4px; margin-left: 6px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; animation: pulse 1.5s infinite; vertical-align: middle;">New</span>`;
+    
+    const readBtn = o.isRead ? '' : `
+      <button onclick="markAsRead('${o.id}')" class="btn-read-tick" title="Mark as Read" style="background: none; border: none; cursor: pointer; color: var(--color-primary); font-size: 1.25rem; font-weight: bold; padding: 4px; display: inline-flex; align-items: center; justify-content: center; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.25)'" onmouseout="this.style.transform='scale(1)'">
+        ✓
+      </button>
+    `;
+
+    const actionCell = `
+      <div style="display: flex; align-items: center; gap: 8px;">
+        ${statusSelect}
+        ${readBtn}
+      </div>
+    `;
+
     return `
       <tr>
-        <td><strong>${o.id}</strong><br><span style="font-size: 0.75rem; color: var(--color-text-muted);">${dateStr}</span></td>
+        <td>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <strong>${o.id}</strong>
+            ${newBadge}
+          </div>
+          <span style="font-size: 0.75rem; color: var(--color-text-muted);">${dateStr}</span>
+        </td>
         <td>
           <strong>${o.customerName}</strong><br>
           <span style="font-size: 0.75rem;">${o.customerPhone}</span><br>
@@ -1365,10 +1616,12 @@ function renderAdminOrdersTable() {
           <span style="font-size: 0.75rem; color: var(--color-text-muted);">Address: ${o.deliveryAddress} (${o.landmark || 'N/A'})</span>
         </td>
         <td><span class="status-pill status-${o.status.toLowerCase().replace(/\s/g, '-')}" style="font-weight:600;">${o.status}</span></td>
-        <td>${statusSelect}</td>
+        <td>${actionCell}</td>
       </tr>
     `;
   }).join('');
+
+  updateUnreadOrdersCount();
 }
 
 async function updateOrderStatus(orderId, newStatus) {

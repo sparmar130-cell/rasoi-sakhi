@@ -12,6 +12,8 @@
   <link rel="icon" type="image/jpeg" href="/assets/logo.jpg">
   <link rel="apple-touch-icon" href="/assets/logo.jpg">
   <link rel="stylesheet" href="style.css">
+  <!-- Razorpay Checkout SDK -->
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
 
@@ -550,7 +552,7 @@
 
           <!-- Tabs: Orders, Products, Settings -->
           <div class="admin-tabs">
-            <button class="admin-tab active" data-tab="admin-orders-tab">Orders</button>
+            <button class="admin-tab active" data-tab="admin-orders-tab">Orders <span id="admin-orders-unread-badge" class="unread-count-badge hide">0</span></button>
             <button class="admin-tab" data-tab="admin-products-tab">Products</button>
             <button class="admin-tab" data-tab="admin-settings-tab">Settings</button>
           </div>
@@ -728,7 +730,20 @@
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var data = JSON.parse(e.postData.contents);
-  sheet.appendRow([
+  
+  var orderId = data.orderId;
+  var rows = sheet.getDataRange().getValues();
+  var foundRowIndex = -1;
+  
+  // Search for the Order ID in the first column
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === String(orderId).trim()) {
+      foundRowIndex = i + 1;
+      break;
+    }
+  }
+  
+  var rowData = [
     data.orderId,
     data.date,
     data.customerName,
@@ -743,7 +758,14 @@ function doPost(e) {
     data.paymentMethod,
     data.deliverySlot,
     data.status
-  ]);
+  ];
+  
+  if (foundRowIndex !== -1) {
+    sheet.getRange(foundRowIndex, 1, 1, rowData.length).setValues([rowData]);
+  } else {
+    sheet.appendRow(rowData);
+  }
+  
   return ContentService.createTextOutput(JSON.stringify({result: "success"})).setMimeType(ContentService.MimeType.JSON);
 }</pre>
                 </li>
@@ -894,6 +916,7 @@ function doPost(e) {
                 <select id="cust-payment" required>
                   <option value="Cash On Delivery">Cash On Delivery</option>
                   <option value="UPI Payment">UPI Payment (QR Scan)</option>
+                  <option value="Online Payment">Online UPI / Card / Netbanking (Razorpay)</option>
                 </select>
               </div>
             </div>

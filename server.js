@@ -6,9 +6,57 @@ const path = require('path');
 const https = require('https');
 const url = require('url');
 const fs = require('fs');
+const Razorpay = require('razorpay');
 require('dotenv').config();
 
 const db = require('./db');
+
+// Initialize Razorpay SDK client if keys are provided and are not placeholders
+let razorpay = null;
+if (process.env.RAZORPAY_KEY_ID && 
+    process.env.RAZORPAY_KEY_SECRET && 
+    process.env.RAZORPAY_KEY_ID !== 'rzp_test_placeholder_key_id' && 
+    process.env.RAZORPAY_KEY_SECRET !== 'placeholder_key_secret') {
+  razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET
+  });
+  console.log("Razorpay SDK client initialized successfully with custom keys.");
+} else {
+  console.log("Razorpay key configurations missing or placeholders detected in env. Online payments will fall back to simulation.");
+}
+
+const READ_ORDERS_PATH = path.join(__dirname, 'data', 'read_orders.json');
+
+// Ensure data directory exists
+if (!fs.existsSync(path.join(__dirname, 'data'))) {
+  fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
+}
+
+function getReadOrders() {
+  try {
+    if (fs.existsSync(READ_ORDERS_PATH)) {
+      return JSON.parse(fs.readFileSync(READ_ORDERS_PATH, 'utf8'));
+    }
+  } catch (e) {
+    console.error("Error reading read_orders.json:", e);
+  }
+  return [];
+}
+
+function markOrderAsRead(orderId) {
+  try {
+    const readOrders = getReadOrders();
+    if (!readOrders.includes(orderId)) {
+      readOrders.push(orderId);
+      fs.writeFileSync(READ_ORDERS_PATH, JSON.stringify(readOrders, null, 2));
+    }
+    return true;
+  } catch (e) {
+    console.error("Error writing read_orders.json:", e);
+    return false;
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -180,7 +228,7 @@ app.post('/api/orders', async (req, res) => {
       subtotal,
       deliveryCharge,
       totalAmount,
-      status: "Pending",
+      status: (paymentMethod.toLowerCase().includes('online') || paymentMethod.toLowerCase().includes('razorpay')) ? "Payment Pending" : "Pending",
       createdAt: new Date().toISOString()
     };
 
@@ -190,12 +238,7 @@ app.post('/api/orders', async (req, res) => {
       return res.status(500).json({ error: "Could not save order." });
     }
 
-    // 1. Trigger Google Sheets Webhook asynchronously
-    if (settings.googleSheetsWebhookUrl) {
-      triggerGoogleSheetsWebhook(settings.googleSheetsWebhookUrl, savedOrder);
-    }
-
-    // 2. Generate WhatsApp link for redirection
+    // Generate WhatsApp link for redirection
     const itemsText = savedOrder.items.map(item => `- ${item.name} (${item.weight} x ${item.quantity})`).join('\n');
     const whatsappMessage = `*Rasoi Sakhi Order* 🥬🥗\n\n` +
                             `*Order ID:* ${savedOrder.id}\n` +
@@ -225,14 +268,198 @@ app.post('/api/orders', async (req, res) => {
     }
     const whatsappUrl = `https://wa.me/${targetPhone}?text=${encodedMsg}`;
 
+    const isOnlinePayment = paymentMethod.toLowerCase().includes('online') || paymentMethod.toLowerCase().includes('razorpay');
+
+    if (isOnlinePayment) {
+      let rzpOrderId = null;
+      if (razorpay) {
+        try {
+          const options = {
+            amount: Math.round(totalAmount * 100), // in paise
+            currency: "INR",
+            receipt: orderId
+          };
+          const rzpOrder = await razorpay.orders.create(options);
+          rzpOrderId = rzpOrder.id;
+        } catch (rzpErr) {
+          console.error("Error creating Razorpay order:", rzpErr);
+          return res.status(500).json({ error: "Failed to initiate payment gateway order." });
+        }
+      } else {
+        // Simulation mode
+        rzpOrderId = `order_sim_${Date.now()}`;
+      }
+
+      // Save mapping
+      await db.savePaymentMapping(rzpOrderId, orderId, {
+        amount: totalAmount,
+        customerPhone,
+        customerName,
+        isSimulated: !razorpay
+      });
+
+      return res.json({
+        success: true,
+        paymentRequired: true,
+        keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder_key_id',
+        amount: Math.round(totalAmount * 100),
+        currency: "INR",
+        razorpayOrderId: rzpOrderId,
+        orderId: orderId,
+        whatsappUrl
+      });
+    }
+
+    // COD Flow: Trigger Google Sheets Webhook immediately
+    if (settings.googleSheetsWebhookUrl) {
+      triggerGoogleSheetsWebhook(settings.googleSheetsWebhookUrl, savedOrder);
+    }
+
     res.json({
       success: true,
+      paymentRequired: false,
       order: savedOrder,
       whatsappUrl
     });
   } catch (error) {
     console.error("Order processing error:", error);
     res.status(500).json({ error: error.message || "Failed to process order." });
+  }
+});
+
+// Razorpay Payment Webhook (Server-to-Server Verification)
+app.post('/api/payments/webhook', async (req, res) => {
+  const signature = req.headers['x-razorpay-signature'];
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+  console.log("Payment webhook event received:", req.body);
+
+  // If secret is set, verify the signature
+  if (webhookSecret && signature) {
+    const crypto = require('crypto');
+    const shasum = crypto.createHmac('sha256', webhookSecret);
+    shasum.update(JSON.stringify(req.body));
+    const digest = shasum.digest('hex');
+
+    if (digest !== signature) {
+      console.warn("Invalid Razorpay webhook signature detected!");
+      return res.status(400).send("Invalid webhook signature.");
+    }
+    console.log("Razorpay webhook signature verified successfully.");
+  } else {
+    console.log("No webhook secret configured or signature missing. Bypassing signature check for simulated requests.");
+  }
+
+  try {
+    let rzpOrderId = null;
+    let eventName = null;
+
+    if (req.body.event) {
+      // Real Razorpay webhook format
+      eventName = req.body.event;
+      if (req.body.payload && req.body.payload.order) {
+        rzpOrderId = req.body.payload.order.entity.id;
+      } else if (req.body.payload && req.body.payload.payment) {
+        rzpOrderId = req.body.payload.payment.entity.order_id;
+      }
+    } else {
+      // Simulated direct webhook call for local debugging
+      rzpOrderId = req.body.razorpayOrderId;
+      eventName = 'order.paid';
+    }
+
+    if (!rzpOrderId) {
+      console.error("No Razorpay Order ID found in payload.");
+      return res.status(400).json({ error: "No order ID found in payload." });
+    }
+
+    console.log(`Processing webhook payment for Razorpay Order ID: ${rzpOrderId}, Event: ${eventName}`);
+
+    // Only process successful payments
+    if (eventName === 'order.paid' || eventName === 'payment.captured' || !req.body.event) {
+      const mapping = await db.getPaymentMapping(rzpOrderId);
+      if (!mapping) {
+        console.error(`No local order mapping found for Razorpay Order ID: ${rzpOrderId}`);
+        return res.status(404).json({ error: "Order mapping not found in mappings table." });
+      }
+
+      const { orderId } = mapping;
+      const orders = await db.getCollection('orders');
+      const order = orders.find(o => o.id === orderId);
+
+      if (!order) {
+        console.error(`Mapped local order ${orderId} not found in database.`);
+        return res.status(404).json({ error: "Local order not found." });
+      }
+
+      if (order.status === "Payment Pending") {
+        console.log(`Payment confirmed for Order ${orderId}. Updating status to Pending.`);
+        const updatedOrder = await db.updateOrderStatus(orderId, "Pending");
+        
+        // Sync to Google Sheets
+        const settings = await db.getSettings();
+        if (settings.googleSheetsWebhookUrl && updatedOrder) {
+          triggerGoogleSheetsWebhook(settings.googleSheetsWebhookUrl, updatedOrder);
+        }
+      } else {
+        console.log(`Order ${orderId} status is already '${order.status}'. Webhook skip double processing.`);
+      }
+
+      // Update mapping status to verified
+      await db.savePaymentMapping(rzpOrderId, orderId, { ...mapping, status: 'verified', updatedAt: new Date().toISOString() });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Webhook processing failed:", err);
+    res.status(500).json({ error: "Internal server error." });
+  }
+});
+
+// Client-side Payment Verification Endpoint
+app.get('/api/orders/:id/verify-payment', async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const orders = await db.getCollection('orders');
+    const order = orders.find(o => o.id === orderId);
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    if (order.status !== "Payment Pending") {
+      return res.json({ success: true, verified: true, status: order.status });
+    }
+
+    // Check mapping to see if this is a simulated transaction
+    const mappingsPath = path.join(__dirname, 'data', 'payment_mappings.json');
+    let isSimulated = false;
+    
+    if (fs.existsSync(mappingsPath)) {
+      const mappings = JSON.parse(fs.readFileSync(mappingsPath, 'utf8') || '{}');
+      const rzpOrderId = Object.keys(mappings).find(key => mappings[key].orderId === orderId);
+      if (rzpOrderId && mappings[rzpOrderId].isSimulated) {
+        isSimulated = true;
+      }
+    }
+
+    // DX Feature: auto-resolve simulated transactions on client request
+    if (isSimulated) {
+      console.log(`Auto-verifying simulated payment order ${orderId} on request.`);
+      const updatedOrder = await db.updateOrderStatus(orderId, "Pending");
+      
+      const settings = await db.getSettings();
+      if (settings.googleSheetsWebhookUrl && updatedOrder) {
+        triggerGoogleSheetsWebhook(settings.googleSheetsWebhookUrl, updatedOrder);
+      }
+      return res.json({ success: true, verified: true, status: "Pending" });
+    }
+
+    // Otherwise, still waiting for the real webhook transaction
+    res.json({ success: true, verified: false, status: order.status });
+  } catch (err) {
+    console.error("Error verifying payment:", err);
+    res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -303,7 +530,12 @@ app.post('/api/admin/settings', authenticateAdmin, async (req, res) => {
 app.get('/api/admin/orders', authenticateAdmin, async (req, res) => {
   try {
     const orders = await db.getCollection('orders');
-    res.json(orders);
+    const readOrders = getReadOrders();
+    const ordersWithReadStatus = orders.map(order => ({
+      ...order,
+      isRead: readOrders.includes(order.id)
+    }));
+    res.json(ordersWithReadStatus);
   } catch (err) {
     console.error("Error fetching orders:", err);
     res.status(500).json({ error: "Could not fetch orders." });
@@ -320,7 +552,10 @@ app.post('/api/admin/orders/:id/status', authenticateAdmin, async (req, res) => 
   try {
     const updatedOrder = await db.updateOrderStatus(req.params.id, status);
     if (updatedOrder) {
-      res.json({ success: true, order: updatedOrder });
+      // Automatically mark as read when status is updated
+      markOrderAsRead(req.params.id);
+      
+      res.json({ success: true, order: { ...updatedOrder, isRead: true } });
       
       // Sync status change to Google Sheets webhook
       try {
@@ -337,6 +572,17 @@ app.post('/api/admin/orders/:id/status', authenticateAdmin, async (req, res) => 
   } catch (err) {
     console.error("Error updating order status:", err);
     res.status(500).json({ error: "Failed to update order status." });
+  }
+});
+
+// Mark Order as Read
+app.post('/api/admin/orders/:id/read', authenticateAdmin, async (req, res) => {
+  try {
+    markOrderAsRead(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error marking order as read:", err);
+    res.status(500).json({ error: "Failed to mark order as read." });
   }
 });
 

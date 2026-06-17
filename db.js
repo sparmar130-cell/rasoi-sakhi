@@ -545,6 +545,43 @@ module.exports = {
     }
   },
 
+  savePaymentMapping: async (razorpayOrderId, orderId, extraData = {}) => {
+    const filePath = path.join(__dirname, 'data', 'payment_mappings.json');
+    try {
+      let mappings = {};
+      if (fs.existsSync(filePath)) {
+        mappings = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      }
+      mappings[razorpayOrderId] = {
+        orderId,
+        createdAt: new Date().toISOString(),
+        ...extraData
+      };
+      const dataDir = path.dirname(filePath);
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      fs.writeFileSync(filePath, JSON.stringify(mappings, null, 2));
+      return true;
+    } catch (err) {
+      console.error("Error saving payment mapping:", err);
+      return false;
+    }
+  },
+
+  getPaymentMapping: async (razorpayOrderId) => {
+    const filePath = path.join(__dirname, 'data', 'payment_mappings.json');
+    try {
+      if (fs.existsSync(filePath)) {
+        const mappings = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        return mappings[razorpayOrderId] || null;
+      }
+    } catch (err) {
+      console.error("Error reading payment mapping:", err);
+    }
+    return null;
+  },
+
   uploadProductImage: async (filename, buffer, mimeType) => {
     if (useSupabase) {
       // Ensure 'product-images' bucket exists
