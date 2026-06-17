@@ -1147,6 +1147,11 @@ function playNotificationSound() {
     if (!AudioContext) return;
     const ctx = new AudioContext();
     
+    // Explicitly resume in case the browser suspended the context
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(e => console.warn("Failed to resume audio context:", e));
+    }
+    
     const playTone = (freq, startTime, duration) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -1154,7 +1159,7 @@ function playNotificationSound() {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, startTime);
       
-      gain.gain.setValueAtTime(0.08, startTime);
+      gain.gain.setValueAtTime(0.4, startTime); // Increased from 0.08 to 0.4 for audibility
       gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
       
       osc.connect(gain);
