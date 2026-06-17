@@ -320,8 +320,8 @@ function writeDB(data) {
 }
 
 // Supabase client initialization
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
+const supabaseUrl = process.env.SUPABASE_URL ? process.env.SUPABASE_URL.trim() : undefined;
+const supabaseKey = process.env.SUPABASE_KEY ? process.env.SUPABASE_KEY.trim() : undefined;
 const useSupabase = !!(supabaseUrl && supabaseKey);
 const supabase = useSupabase ? createClient(supabaseUrl, supabaseKey) : null;
 

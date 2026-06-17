@@ -13,9 +13,9 @@ require('dotenv').config();
 const db = require('./db');
 
 // VAPID Keys for Browser Push Notifications
-const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
-const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
-const VAPID_EMAIL = process.env.VAPID_EMAIL || 'mailto:support@rasoisakhi.com';
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY ? process.env.VAPID_PUBLIC_KEY.trim() : undefined;
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ? process.env.VAPID_PRIVATE_KEY.trim() : undefined;
+const VAPID_EMAIL = process.env.VAPID_EMAIL ? process.env.VAPID_EMAIL.trim() : 'mailto:support@rasoisakhi.com';
 
 if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -29,10 +29,12 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
 // To re-enable, uncomment the require above, restore the init block below,
 // and restore the /api/payments/webhook and /api/orders/:id/verify-payment endpoints.
 let razorpay = null;
-if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET &&
-    process.env.RAZORPAY_KEY_ID !== 'rzp_test_placeholder_key_id' &&
-    process.env.RAZORPAY_KEY_SECRET !== 'placeholder_key_secret') {
-  razorpay = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+const rzpKeyId = process.env.RAZORPAY_KEY_ID ? process.env.RAZORPAY_KEY_ID.trim() : undefined;
+const rzpKeySecret = process.env.RAZORPAY_KEY_SECRET ? process.env.RAZORPAY_KEY_SECRET.trim() : undefined;
+if (rzpKeyId && rzpKeySecret &&
+    rzpKeyId !== 'rzp_test_placeholder_key_id' &&
+    rzpKeySecret !== 'placeholder_key_secret') {
+  razorpay = new Razorpay({ key_id: rzpKeyId, key_secret: rzpKeySecret });
 }
 
 // isRead state is now persisted permanently in the Supabase 'orders' table.
@@ -308,7 +310,10 @@ app.post('/api/orders', async (req, res) => {
           rzpOrderId = rzpOrder.id;
         } catch (rzpErr) {
           console.error("Error creating Razorpay order:", rzpErr);
-          return res.status(500).json({ error: "Failed to initiate payment gateway order." });
+          return res.status(500).json({ 
+            error: "Failed to initiate payment gateway order.",
+            details: rzpErr.message || (rzpErr.error && rzpErr.error.description) || String(rzpErr)
+          });
         }
       } else {
         // Simulation mode
@@ -326,7 +331,7 @@ app.post('/api/orders', async (req, res) => {
       return res.json({
         success: true,
         paymentRequired: true,
-        keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder_key_id',
+        keyId: rzpKeyId || 'rzp_test_placeholder_key_id',
         amount: Math.round(totalAmount * 100),
         currency: "INR",
         razorpayOrderId: rzpOrderId,
