@@ -597,80 +597,143 @@ module.exports = {
   },
 
   savePaymentMapping: async (razorpayOrderId, orderId, extraData = {}) => {
-    const isVercel = process.env.VERCEL || process.env.NOW_BUILDER;
-    const filePath = isVercel ? path.join('/tmp', 'payment_mappings.json') : path.join(__dirname, 'data', 'payment_mappings.json');
-    try {
-      let mappings = {};
-      try {
-        if (fs.existsSync(filePath)) {
-          mappings = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        } else {
-          mappings = { ...inMemoryPaymentMappings };
-        }
-      } catch (readErr) {
-        mappings = { ...inMemoryPaymentMappings };
-      }
-      
-      mappings[razorpayOrderId] = {
-        orderId,
-        createdAt: new Date().toISOString(),
-        ...extraData
-      };
-      
-      inMemoryPaymentMappings = mappings;
+    // Always populate in-memory cache for same-instance speed
+    inMemoryPaymentMappings[razorpayOrderId] = {
+      orderId,
+      createdAt: new Date().toISOString(),
+      ...extraData
+    };
 
-      const dataDir = path.dirname(filePath);
+    if (useSupabase) {
+      // On Vercel serverless, each instance has its own /tmp so we MUST use Supabase
+      // for payment mappings to survive cross-instance webhook delivery
       try {
-        if (!fs.existsSync(dataDir)) {
-          fs.mkdirSync(dataDir, { recursive: true });
+        const { error } = await supabase.from('payment_mappings').upsert({
+          razorpay_order_id: razorpayOrderId,
+          order_id: orderId,
+          metadata: extraData
+        }, { onConflict: 'razorpay_order_id' });
+        if (error) {
+          console.error("Supabase error saving payment mapping:", error.message);
+          // In-memory cache is still set so same-instance lookups still work
         }
-        fs.writeFileSync(filePath, JSON.stringify(mappings, null, 2));
-      } catch (writeErr) {
-        console.warn("Error writing payment mapping to file, using in-memory:", writeErr.message);
+      } catch (err) {
+        console.error("Failed to persist payment mapping to Supabase:", err);
       }
       return true;
-    } catch (err) {
-      console.error("Error saving payment mapping:", err);
-      return false;
     }
+
+    // Local dev: JSON file storage
+    const filePath = path.join(__dirname, 'data', 'payment_mappings.json');
+    try {
+      let mappings = {};
+      if (fs.existsSync(filePath)) {
+        mappings = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      }
+      mappings[razorpayOrderId] = inMemoryPaymentMappings[razorpayOrderId];
+      const dataDir = path.dirname(filePath);
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(filePath, JSON.stringify(mappings, null, 2));
+    } catch (writeErr) {
+      console.warn("Error writing payment mapping to file, in-memory fallback active:", writeErr.message);
+    }
+    return true;
   },
 
   getPaymentMapping: async (razorpayOrderId) => {
-    const isVercel = process.env.VERCEL || process.env.NOW_BUILDER;
-    const filePath = isVercel ? path.join('/tmp', 'payment_mappings.json') : path.join(__dirname, 'data', 'payment_mappings.json');
+    // Check in-memory cache first (fastest path, reliable within same instance)
+    if (inMemoryPaymentMappings[razorpayOrderId]) {
+      return inMemoryPaymentMappings[razorpayOrderId];
+    }
+
+    if (useSupabase) {
+      // Fetch from Supabase (handles cross-instance webhook delivery on Vercel)
+      try {
+        const { data, error } = await supabase
+          .from('payment_mappings')
+          .select('*')
+          .eq('razorpay_order_id', razorpayOrderId)
+          .maybeSingle();
+        if (error) {
+          console.error("Supabase error fetching payment mapping:", error.message);
+          return null;
+        }
+        if (data) {
+          const result = {
+            orderId: data.order_id,
+            createdAt: data.created_at,
+            ...(data.metadata || {})
+          };
+          inMemoryPaymentMappings[razorpayOrderId] = result; // Cache for this instance
+          return result;
+        }
+      } catch (err) {
+        console.error("Failed to fetch payment mapping from Supabase:", err);
+      }
+      return null;
+    }
+
+    // Local dev: JSON file storage
+    const filePath = path.join(__dirname, 'data', 'payment_mappings.json');
     try {
       if (fs.existsSync(filePath)) {
         const mappings = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        return mappings[razorpayOrderId] || inMemoryPaymentMappings[razorpayOrderId] || null;
+        return mappings[razorpayOrderId] || null;
       }
     } catch (err) {
       console.error("Error reading payment mapping:", err);
     }
-    return inMemoryPaymentMappings[razorpayOrderId] || null;
+    return null;
   },
 
   getPaymentMappingByOrderId: async (orderId) => {
-    const isVercel = process.env.VERCEL || process.env.NOW_BUILDER;
-    const filePath = isVercel ? path.join('/tmp', 'payment_mappings.json') : path.join(__dirname, 'data', 'payment_mappings.json');
+    // Check in-memory cache first
+    const memKey = Object.keys(inMemoryPaymentMappings).find(
+      key => inMemoryPaymentMappings[key].orderId === orderId
+    );
+    if (memKey) return inMemoryPaymentMappings[memKey];
+
+    if (useSupabase) {
+      try {
+        const { data, error } = await supabase
+          .from('payment_mappings')
+          .select('*')
+          .eq('order_id', orderId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) {
+          console.error("Supabase error fetching payment mapping by orderId:", error.message);
+          return null;
+        }
+        if (data) {
+          return {
+            orderId: data.order_id,
+            createdAt: data.created_at,
+            ...(data.metadata || {})
+          };
+        }
+      } catch (err) {
+        console.error("Failed to fetch payment mapping by orderId from Supabase:", err);
+      }
+      return null;
+    }
+
+    // Local dev: JSON file storage
+    const filePath = path.join(__dirname, 'data', 'payment_mappings.json');
     try {
       let mappings = {};
-      try {
-        if (fs.existsSync(filePath)) {
-          mappings = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        } else {
-          mappings = { ...inMemoryPaymentMappings };
-        }
-      } catch (readErr) {
-        mappings = { ...inMemoryPaymentMappings };
+      if (fs.existsSync(filePath)) {
+        mappings = JSON.parse(fs.readFileSync(filePath, 'utf8'));
       }
       const rzpOrderId = Object.keys(mappings).find(key => mappings[key].orderId === orderId);
       return rzpOrderId ? mappings[rzpOrderId] : null;
     } catch (err) {
       console.error("Error retrieving mapping by order ID:", err);
     }
-    const rzpOrderId = Object.keys(inMemoryPaymentMappings).find(key => inMemoryPaymentMappings[key].orderId === orderId);
-    return rzpOrderId ? inMemoryPaymentMappings[rzpOrderId] : null;
+    return null;
   },
+
 
   uploadProductImage: async (filename, buffer, mimeType) => {
     if (useSupabase) {

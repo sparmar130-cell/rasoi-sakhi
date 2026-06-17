@@ -8,6 +8,7 @@ const url = require('url');
 const fs = require('fs');
 const Razorpay = require('razorpay');
 const webpush = require('web-push');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const db = require('./db');
@@ -47,6 +48,25 @@ const JWT_SECRET = process.env.JWT_SECRET || 'rasoi-sakhi-secret-key-2026';
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// --- RATE LIMITERS ---
+// Protects order creation from bots/spam (5 orders per 10 minutes per IP)
+const orderLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many orders submitted from this connection. Please wait a few minutes and try again.' }
+});
+
+// Protects admin login from brute-force (10 attempts per 15 minutes per IP)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please wait 15 minutes before trying again.' }
+});
 
 // Middleware to authenticate Admin JWT
 function authenticateAdmin(req, res, next) {
@@ -183,7 +203,7 @@ app.get('/api/testimonials', async (req, res) => {
 });
 
 // Create Order (Checkout)
-app.post('/api/orders', async (req, res) => {
+app.post('/api/orders', orderLimiter, async (req, res) => {
   const {
     customerName,
     customerPhone,
@@ -364,20 +384,30 @@ app.post('/api/payments/webhook', async (req, res) => {
 
   console.log("Payment webhook event received:", req.body);
 
-  // If secret is set, verify the signature
-  if (webhookSecret && signature) {
+// Webhook signature verification
+  if (webhookSecret) {
+    // Secret is configured — signature header is now REQUIRED
+    if (!signature) {
+      console.warn("Webhook rejected: RAZORPAY_WEBHOOK_SECRET is set but no x-razorpay-signature header was provided.");
+      return res.status(401).send("Webhook signature required.");
+    }
     const crypto = require('crypto');
     const shasum = crypto.createHmac('sha256', webhookSecret);
     shasum.update(JSON.stringify(req.body));
     const digest = shasum.digest('hex');
-
     if (digest !== signature) {
-      console.warn("Invalid Razorpay webhook signature detected!");
+      console.warn("Invalid Razorpay webhook signature detected! Rejecting request.");
       return res.status(400).send("Invalid webhook signature.");
     }
     console.log("Razorpay webhook signature verified successfully.");
+  } else if (req.body && req.body.event && !req.body.razorpayOrderId) {
+    // Looks like a real Razorpay webhook payload but no secret is configured — reject
+    // to prevent anyone from forging payment confirmations
+    console.warn("SECURITY: Received Razorpay-format webhook but RAZORPAY_WEBHOOK_SECRET env var is not set. Rejecting to prevent abuse.");
+    return res.status(503).json({ error: "Webhook secret not configured on server. Set RAZORPAY_WEBHOOK_SECRET in environment variables." });
   } else {
-    console.log("No webhook secret configured or signature missing. Bypassing signature check for simulated requests.");
+    // Simulation-format request (has razorpayOrderId field) — allow for local testing
+    console.log("No webhook secret configured. Allowing simulation webhook request (razorpayOrderId format).");
   }
 
   try {
@@ -538,7 +568,7 @@ app.get('/api/admin/push-status', authenticateAdmin, async (req, res) => {
 /**
  * ADMIN AUTHENTICATION
  */
-app.post('/api/admin/login', async (req, res) => {
+app.post('/api/admin/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   try {
     const users = await db.getCollection('users');
