@@ -288,7 +288,8 @@ const defaultDatabase = {
       quote: "The Pav Bhaji pack is a lifesaver. No peeling potatoes or cleaning cauliflower. Clean, chemical-free, and delicious results. Strongly recommended!",
       rating: 5
     }
-  ]
+  ],
+  pushSubscriptions: []
 };
 
 // Note: Local file initialization is deferred until after Supabase check below.
@@ -684,6 +685,62 @@ module.exports = {
       const filepath = path.join(uploadDir, filename);
       fs.writeFileSync(filepath, buffer);
       return `/assets/uploaded_products/${filename}`;
+    }
+  },
+
+  // Browser Push Notification Subscriptions
+  savePushSubscription: async (subscription) => {
+    if (!subscription || !subscription.endpoint) return false;
+    if (useSupabase) {
+      const { error } = await supabase
+        .from('pushSubscriptions')
+        .upsert(subscription, { onConflict: 'endpoint' });
+      if (error) {
+        console.error("Supabase error saving push subscription:", error);
+        return false;
+      }
+      return true;
+    } else {
+      const db = readDB();
+      if (!db.pushSubscriptions) db.pushSubscriptions = [];
+      const index = db.pushSubscriptions.findIndex(s => s.endpoint === subscription.endpoint);
+      if (index !== -1) {
+        db.pushSubscriptions[index] = subscription;
+      } else {
+        db.pushSubscriptions.push(subscription);
+      }
+      return writeDB(db);
+    }
+  },
+
+  getPushSubscriptions: async () => {
+    if (useSupabase) {
+      const { data, error } = await supabase.from('pushSubscriptions').select('*');
+      if (error) {
+        console.error("Supabase error fetching push subscriptions:", error);
+        return [];
+      }
+      return data || [];
+    } else {
+      const db = readDB();
+      return db.pushSubscriptions || [];
+    }
+  },
+
+  deletePushSubscription: async (endpoint) => {
+    if (!endpoint) return false;
+    if (useSupabase) {
+      const { error } = await supabase.from('pushSubscriptions').delete().eq('endpoint', endpoint);
+      if (error) {
+        console.error("Supabase error deleting push subscription:", error);
+        return false;
+      }
+      return true;
+    } else {
+      const db = readDB();
+      if (!db.pushSubscriptions) return true;
+      db.pushSubscriptions = db.pushSubscriptions.filter(s => s.endpoint !== endpoint);
+      return writeDB(db);
     }
   }
 };

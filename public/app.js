@@ -36,6 +36,9 @@ function initApp() {
   // Handle URL hash routing if present
   handleHashRoute();
 
+  // Listen for browser forward/back navigation events
+  window.addEventListener('hashchange', handleHashRoute);
+
   // Setup mobile-friendly bottom-sheet swipe logic
   setupSwipeToClose();
 
@@ -459,22 +462,16 @@ function setupEventListeners() {
       const href = link.getAttribute('href');
       
       if (target) {
-        switchView(target);
-
-        // If data-scroll is set, scroll to that element after switching view
-        if (scrollTo) {
-          setTimeout(() => {
-            const scrollEl = document.getElementById(scrollTo);
-            if (scrollEl) scrollEl.scrollIntoView({ behavior: 'smooth' });
-          }, 150);
-        } else if (href && href.startsWith('#') && href.length > 1) {
-          // If the link points to an anchor (like #process), scroll to it
-          const anchorEl = document.querySelector(href);
-          if (anchorEl) {
-            setTimeout(() => {
-              anchorEl.scrollIntoView({ behavior: 'smooth' });
-            }, 150);
+        if (target === 'home-section') {
+          if (scrollTo) {
+            window.location.hash = `#${scrollTo}`;
+          } else if (href && href.startsWith('#') && href.length > 1) {
+            window.location.hash = href;
+          } else {
+            window.location.hash = '';
           }
+        } else {
+          window.location.hash = `#${target.replace('-section', '')}`;
         }
       }
     });
@@ -482,7 +479,7 @@ function setupEventListeners() {
 
   // Logo Button
   document.getElementById('header-logo-btn').addEventListener('click', () => {
-    switchView('home-section');
+    window.location.hash = '';
   });
 
   // Home CTA Buttons
@@ -492,10 +489,7 @@ function setupEventListeners() {
     if (inlineShop) inlineShop.scrollIntoView({ behavior: 'smooth' });
   });
   document.getElementById('hero-process-btn').addEventListener('click', () => {
-    switchView('home-section');
-    setTimeout(() => {
-      document.getElementById('process').scrollIntoView({ behavior: 'smooth' });
-    }, 100);
+    window.location.hash = '#process';
   });
   // view-all-shop-btn removed (popular products section commented out)
 
@@ -628,12 +622,12 @@ function setupEventListeners() {
 
   // Admin login button triggers — header (desktop) + bottom nav (mobile)
   document.getElementById('admin-login-trigger').addEventListener('click', () => {
-    switchView('admin-section');
+    window.location.hash = '#admin';
   });
   const adminHeaderBtn = document.getElementById('admin-header-btn');
   if (adminHeaderBtn) {
     adminHeaderBtn.addEventListener('click', () => {
-      switchView('admin-section');
+      window.location.hash = '#admin';
     });
   }
 
@@ -681,9 +675,17 @@ function switchView(targetId) {
   // Scroll to top when changing page
   window.scrollTo({ top: 0, behavior: 'instant' });
 
-  // Update hash
-  if (targetId === 'home-section') history.replaceState(null, '', ' ');
-  else history.replaceState(null, '', `#${targetId.replace('-section', '')}`);
+  // Update URL hash using replaceState ONLY if called programmatically and it differs
+  if (targetId === 'home-section') {
+    if (window.location.hash !== '' && window.location.hash !== '#') {
+      history.replaceState(null, '', ' ');
+    }
+  } else {
+    const expectedHash = `#${targetId.replace('-section', '')}`;
+    if (window.location.hash !== expectedHash) {
+      history.replaceState(null, '', expectedHash);
+    }
+  }
 
   // Fetch admin stats if switching to dashboard
   if (targetId === 'admin-section' && state.adminToken) {
@@ -693,7 +695,10 @@ function switchView(targetId) {
 
 function handleHashRoute() {
   const hash = window.location.hash;
-  if (!hash) return;
+  if (!hash) {
+    switchView('home-section');
+    return;
+  }
 
   // #shop now lives inline on the home page
   if (hash === '#shop') {
@@ -705,10 +710,22 @@ function handleHashRoute() {
     return;
   }
 
+  // Handle home section anchor points (e.g., #process)
+  if (['#process', '#features', '#about', '#hero'].includes(hash)) {
+    switchView('home-section');
+    setTimeout(() => {
+      const el = document.getElementById(hash.slice(1));
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }, 150);
+    return;
+  }
+
   const targetId = `${hash.slice(1)}-section`;
   const view = document.getElementById(targetId);
   if (view) {
     switchView(targetId);
+  } else {
+    switchView('home-section');
   }
 }
 
@@ -1409,6 +1426,7 @@ function showAdminDashboard() {
   document.getElementById('admin-dashboard-panel').classList.remove('hide');
   loadAdminDashboard();
   startAdminPolling();
+  initPushNotifications();
 }
 
 async function loadAdminDashboard() {
@@ -2021,5 +2039,174 @@ function setupSwipeToClose() {
       closeProductDetails();
     }
   });
+}
+
+// ==========================================================================
+// BROWSER PUSH NOTIFICATIONS
+// ==========================================================================
+
+let swRegistration = null;
+let isPushEnabled = false;
+
+// Register service worker and check push notification status
+async function initPushNotifications() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    updatePushButtonUI(false, false);
+    return;
+  }
+  try {
+    swRegistration = await navigator.serviceWorker.register('/sw.js');
+    const existing = await swRegistration.pushManager.getSubscription();
+    isPushEnabled = !!existing;
+    updatePushButtonUI(true, isPushEnabled);
+  } catch (err) {
+    updatePushButtonUI(false, false);
+  }
+}
+
+// Request notification permission and subscribe
+async function enablePushNotifications() {
+  const permission = await Notification.requestPermission();
+  if (permission === 'denied') {
+    alert('Please enable notifications in your browser settings to receive payment alerts.');
+    return;
+  }
+  if (permission !== 'granted') return;
+
+  try {
+    if (!swRegistration) {
+      swRegistration = await navigator.serviceWorker.register('/sw.js');
+    }
+    const keyRes = await fetch(`${API_BASE}/admin/push-vapid-key`);
+    if (!keyRes.ok) throw new Error('Push not configured on server');
+    const { publicKey } = await keyRes.json();
+
+    const sub = await swRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey)
+    });
+
+    const res = await fetch(`${API_BASE}/admin/push-subscribe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.adminToken}`
+      },
+      body: JSON.stringify(sub)
+    });
+
+    if (res.ok) {
+      isPushEnabled = true;
+      updatePushButtonUI(true, true);
+      showInPageToast('Push notifications enabled — you will be alerted when payments arrive.');
+    }
+  } catch (err) {
+    alert('Failed to enable push notifications. Please try again.');
+    updatePushButtonUI(true, false);
+  }
+}
+
+// Unsubscribe from push notifications
+async function disablePushNotifications() {
+  try {
+    const sub = await swRegistration.pushManager.getSubscription();
+    if (sub) {
+      await sub.unsubscribe();
+      await fetch(`${API_BASE}/admin/push-unsubscribe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.adminToken}`
+        },
+        body: JSON.stringify({ endpoint: sub.endpoint })
+      });
+    }
+    isPushEnabled = false;
+    updatePushButtonUI(true, false);
+    showInPageToast('Push notifications disabled.');
+  } catch (err) {
+    console.error('Error disabling push notifications:', err);
+  }
+}
+
+// Convert VAPID base64url to Uint8Array (browser push API requires this)
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+// Update push notification button appearance based on state
+function updatePushButtonUI(supported, enabled) {
+  const btn = document.getElementById('push-notif-btn');
+  if (!btn) return;
+
+  const existingWarning = document.getElementById('push-notif-unsupported-msg');
+  if (existingWarning) {
+    existingWarning.remove();
+  }
+
+  if (!supported) {
+    btn.style.display = 'none';
+    
+    const warning = document.createElement('p');
+    warning.id = 'push-notif-unsupported-msg';
+    warning.style.fontSize = '0.85rem';
+    warning.style.color = '#d32f2f';
+    warning.style.marginTop = 'var(--spacing-sm)';
+    warning.style.display = 'flex';
+    warning.style.alignItems = 'center';
+    warning.style.gap = '6px';
+    warning.style.lineHeight = '1.4';
+    
+    const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!isSecure) {
+      warning.innerHTML = `⚠️ Push notifications require a secure connection (HTTPS) or localhost.`;
+    } else {
+      warning.innerHTML = `⚠️ Push notifications are not supported by this browser.`;
+    }
+    btn.parentNode.appendChild(warning);
+    return;
+  }
+
+  btn.style.display = '';
+
+  if (enabled) {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg> Notifications On`;
+    btn.classList.remove('btn-secondary');
+    btn.classList.add('btn-success');
+    btn.onclick = disablePushNotifications;
+  } else {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zM8.5 11c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm7 0c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5z"/></svg> Enable Notifications`;
+    btn.classList.remove('btn-success');
+    btn.classList.add('btn-secondary');
+    btn.onclick = enablePushNotifications;
+  }
+}
+
+// Small non-intrusive in-page toast
+function showInPageToast(message) {
+  const toast = document.createElement('div');
+  toast.style.cssText = [
+    'position:fixed', 'top:20px', 'right:20px', 'z-index:10001',
+    'background:#2e7d32', 'color:#fff',
+    'padding:10px 18px', 'border-radius:8px',
+    'box-shadow:0 4px 20px rgba(0,0,0,0.25)',
+    'font-size:0.88rem', 'max-width:280px',
+    'animation:slideInRight 0.3s ease',
+    'font-family:var(--font-body,inherit)'
+  ].join(';');
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s';
+    setTimeout(() => toast.remove(), 300);
+  }, 3500);
 }
 

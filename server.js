@@ -7,9 +7,22 @@ const https = require('https');
 const url = require('url');
 const fs = require('fs');
 // const Razorpay = require('razorpay'); // RAZORPAY COMMENTED OUT — client uses QR Code / UPI instead
+const webpush = require('web-push');
 require('dotenv').config();
 
 const db = require('./db');
+
+// VAPID Keys for Browser Push Notifications
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+const VAPID_EMAIL = process.env.VAPID_EMAIL || 'mailto:support@rasoisakhi.com';
+
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+  console.log("Push Notifications: VAPID configured");
+} else {
+  console.log("Push Notifications: VAPID keys not set — push disabled");
+}
 
 // --- RAZORPAY INTEGRATION DISABLED ---
 // Client uses their own QR Code / UPI for payments.
@@ -49,6 +62,44 @@ function authenticateAdmin(req, res, next) {
     req.adminId = decoded.id;
     next();
   });
+}
+
+// Send push notification to all subscribed admin devices
+async function sendPushNotification(order) {
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    console.log("Push notifications: VAPID not configured, skipping");
+    return;
+  }
+  try {
+    const subscriptions = await db.getPushSubscriptions();
+    if (!subscriptions || subscriptions.length === 0) return;
+
+    const payload = JSON.stringify({
+      title: 'Payment Received!',
+      body: `Rs.${order.totalAmount} from ${order.customerName} — Order: ${order.id}`,
+      tag: `payment-${order.id}`,
+      url: '/#admin-section',
+      orderId: order.id
+    });
+
+    const pushPromises = subscriptions.map(async (sub) => {
+      try {
+        await webpush.sendNotification(sub, payload);
+      } catch (err) {
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          console.log(`Removing invalid push subscription: ${sub.endpoint.substring(0, 50)}...`);
+          await db.deletePushSubscription(sub.endpoint);
+        } else {
+          console.error(`Push failed for subscription: ${err.message}`);
+        }
+      }
+    });
+
+    await Promise.allSettled(pushPromises);
+    console.log(`Push notifications sent for order: ${order.id}`);
+  } catch (err) {
+    console.error("Error sending push notifications:", err);
+  }
 }
 
 // Trigger Webhook helper (Google Sheets Integration)
@@ -275,6 +326,56 @@ app.post('/api/orders', async (req, res) => {
 // =============================================================================
 
 /**
+ * BROWSER PUSH NOTIFICATIONS
+ */
+
+// Serve VAPID public key to the client (no auth needed — key is public)
+app.get('/api/admin/push-vapid-key', (req, res) => {
+  if (!VAPID_PUBLIC_KEY) {
+    return res.status(503).json({ error: "Push notifications not configured" });
+  }
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+// Subscribe to push notifications (saves subscription so admin gets notified later)
+app.post('/api/admin/push-subscribe', authenticateAdmin, async (req, res) => {
+  const subscription = req.body;
+  if (!subscription || !subscription.endpoint) {
+    return res.status(400).json({ error: "Invalid subscription data" });
+  }
+  try {
+    const saved = await db.savePushSubscription(subscription);
+    if (saved) {
+      res.json({ success: true, message: "Push notifications enabled" });
+    } else {
+      res.status(500).json({ error: "Failed to save subscription" });
+    }
+  } catch (err) {
+    console.error("Error saving push subscription:", err);
+    res.status(500).json({ error: "Failed to enable notifications" });
+  }
+});
+
+// Unsubscribe from push notifications
+app.post('/api/admin/push-unsubscribe', authenticateAdmin, async (req, res) => {
+  const { endpoint } = req.body;
+  if (!endpoint) return res.status(400).json({ error: "Missing endpoint" });
+  try {
+    await db.deletePushSubscription(endpoint);
+    res.json({ success: true, message: "Notifications disabled" });
+  } catch (err) {
+    console.error("Error removing push subscription:", err);
+    res.status(500).json({ error: "Failed to disable notifications" });
+  }
+});
+
+// Check if push is enabled for this admin
+app.get('/api/admin/push-status', authenticateAdmin, async (req, res) => {
+  const subscriptions = await db.getPushSubscriptions();
+  res.json({ enabled: subscriptions.length > 0 });
+});
+
+/**
  * ADMIN AUTHENTICATION
  */
 app.post('/api/admin/login', async (req, res) => {
@@ -363,6 +464,11 @@ app.post('/api/admin/orders/:id/status', authenticateAdmin, async (req, res) => 
       await db.updateOrderRead(req.params.id, true);
 
       res.json({ success: true, order: { ...updatedOrder, isRead: true } });
+
+      // Send browser push notification when payment is confirmed
+      if (status === 'Payment Received') {
+        sendPushNotification(updatedOrder);
+      }
 
       // Sync status change to Google Sheets webhook
       try {

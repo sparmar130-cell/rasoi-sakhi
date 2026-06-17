@@ -338,6 +338,17 @@ button, input, select, textarea {
   color: var(--color-bg-light);
 }
 
+.btn-success {
+  background-color: var(--color-primary);
+  color: #fff;
+  border: 1px solid var(--color-primary);
+}
+
+.btn-success:hover {
+  background-color: #2e7d32;
+  border-color: #2e7d32;
+}
+
 .btn-outline {
   border: 1px solid var(--color-text-dark);
   color: var(--color-text-dark);
@@ -1080,7 +1091,7 @@ button, input, select, textarea {
 
 .form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: var(--spacing-sm);
 }
 
@@ -1736,11 +1747,12 @@ button, input, select, textarea {
 .admin-top-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .admin-stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: var(--spacing-sm);
 }
 
@@ -1808,6 +1820,7 @@ button, input, select, textarea {
 .tab-filters {
   display: flex;
   gap: var(--spacing-xs);
+  flex-wrap: wrap;
 }
 
 .tab-filters input {
@@ -1852,6 +1865,8 @@ button, input, select, textarea {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
 }
 
 /* Settings configurations */
@@ -2142,6 +2157,10 @@ button, input, select, textarea {
 
   .admin-stats-grid {
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  .form-row {
+    grid-template-columns: 1fr 1fr;
   }
 
   .tab-filters {

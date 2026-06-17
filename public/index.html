@@ -718,6 +718,20 @@
               <button type="submit" class="btn btn-primary">Save Settings</button>
               <div id="settings-status" class="form-status"></div>
             </form>
+
+            <div class="settings-card" style="margin-top: var(--spacing-lg); margin-bottom: var(--spacing-lg); padding: var(--spacing-md); border: 1px solid var(--color-border-soft); border-radius: 0px; background-color: var(--color-bg-pure);">
+              <h4 style="margin-bottom: var(--spacing-xs); display: flex; align-items: center; gap: 8px;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="color: var(--color-primary);"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+                Real-Time Push Alerts (This Device)
+              </h4>
+              <p style="font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: var(--spacing-md); line-height: 1.4;">
+                Enable push notifications to receive instant audio and system alerts directly on this device whenever a payment is confirmed.
+              </p>
+              <button class="btn btn-secondary" id="push-notif-btn" title="Enable push notifications to get alerted on your phone when payments arrive">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="vertical-align: middle; margin-right: 4px;"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+                Enable Notifications
+              </button>
+            </div>
             
             <div class="settings-guide">
               <h4>Setup Guide: Google Sheets Automatic Sync</h4>
