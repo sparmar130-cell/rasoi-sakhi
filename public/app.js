@@ -633,17 +633,33 @@ function setupEventListeners() {
     });
   }
 
-  // Header contact button — on desktop navigate to Contact section; on mobile it dials directly
+  // Header contact button — toggles Call / WhatsApp popup
   const headerContactBtn = document.getElementById('header-contact-btn');
-  if (headerContactBtn) {
+  const contactPopup = document.getElementById('contact-popup');
+  if (headerContactBtn && contactPopup) {
     headerContactBtn.addEventListener('click', (e) => {
-      // On non-touch / desktop devices, navigate to contact section instead of dialing
-      const isDesktop = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-      if (isDesktop) {
-        e.preventDefault();
-        window.location.hash = '#contact';
+      e.stopPropagation();
+      const isOpen = contactPopup.classList.contains('open');
+      contactPopup.classList.toggle('open', !isOpen);
+      headerContactBtn.classList.toggle('active', !isOpen);
+    });
+
+    // Close popup when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!document.getElementById('header-contact-wrap')?.contains(e.target)) {
+        contactPopup.classList.remove('open');
+        headerContactBtn.classList.remove('active');
       }
-      // On mobile/touch: allow default tel: behavior (opens dialer)
+    });
+
+    // Close popup when a popup option is clicked (after a short delay so the link fires)
+    contactPopup.querySelectorAll('.contact-popup-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        setTimeout(() => {
+          contactPopup.classList.remove('open');
+          headerContactBtn.classList.remove('active');
+        }, 150);
+      });
     });
   }
 

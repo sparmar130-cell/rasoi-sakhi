@@ -181,22 +181,31 @@ button, input, select, textarea {
   width: 24px;
   height: 24px;
 }
+}
 
-/* Header Contact / Phone button */
+/* ── Header Contact Button + Popup ─────────────────────────────── */
+.header-contact-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .header-contact-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 8px;
   border-radius: 50%;
+  border: none;
+  cursor: pointer;
   color: var(--color-primary);
   background-color: var(--color-primary-light);
-  text-decoration: none;
   transition: var(--transition-smooth);
   animation: contact-pulse 2.5s ease-in-out infinite;
 }
 
-.header-contact-btn:hover {
+.header-contact-btn:hover,
+.header-contact-btn.active {
   background-color: var(--color-primary);
   color: white;
   transform: scale(1.1);
@@ -206,6 +215,122 @@ button, input, select, textarea {
 @keyframes contact-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(46, 125, 50, 0.25); }
   50% { box-shadow: 0 0 0 6px rgba(46, 125, 50, 0); }
+}
+
+/* The popup card */
+.contact-popup {
+  display: none;
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  width: 210px;
+  background: white;
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08);
+  padding: 12px 10px 10px;
+  z-index: 9999;
+  animation: popup-drop 0.18s ease;
+  transform-origin: top right;
+  border: 1px solid rgba(46,125,50,0.12);
+}
+
+/* Small arrow pointing up */
+.contact-popup::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  right: 12px;
+  width: 14px;
+  height: 14px;
+  background: white;
+  border-left: 1px solid rgba(46,125,50,0.12);
+  border-top: 1px solid rgba(46,125,50,0.12);
+  transform: rotate(45deg);
+  border-radius: 2px 0 0 0;
+}
+
+.contact-popup.open {
+  display: block;
+}
+
+@keyframes popup-drop {
+  from { opacity: 0; transform: scale(0.92) translateY(-6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.contact-popup-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 4px 8px;
+}
+
+.contact-popup-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-decoration: none;
+  transition: background 0.15s ease, transform 0.12s ease;
+  margin-bottom: 6px;
+}
+
+.contact-popup-option:last-child {
+  margin-bottom: 0;
+}
+
+.contact-popup-option:hover {
+  transform: translateX(2px);
+}
+
+/* Call option */
+.call-option {
+  background: hsl(142, 55%, 96%);
+  color: hsl(142, 50%, 28%);
+}
+.call-option:hover {
+  background: hsl(142, 55%, 90%);
+}
+
+/* WhatsApp option */
+.whatsapp-option {
+  background: hsl(142, 60%, 94%);
+  color: hsl(142, 60%, 22%);
+}
+.whatsapp-option:hover {
+  background: hsl(142, 60%, 88%);
+}
+
+.contact-popup-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: white;
+  flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.contact-popup-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.contact-popup-text strong {
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-family: var(--font-heading);
+}
+
+.contact-popup-text small {
+  font-size: 0.73rem;
+  opacity: 0.75;
 }
 
 /* Utility: hidden on mobile, shown on desktop */
