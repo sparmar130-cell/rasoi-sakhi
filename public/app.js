@@ -999,6 +999,39 @@ async function handleCheckoutSubmit(e) {
     }))
   };
 
+  /**
+   * Hardened WhatsApp redirect — tries three strategies so it works on
+   * every browser, mobile, and privacy-restricted environment.
+   */
+  function openWhatsApp(url) {
+    // Strategy 1: Standard new tab (works on most desktop & Android Chrome)
+    const newTab = window.open(url, '_blank', 'noopener,noreferrer');
+    if (newTab) {
+      try { newTab.focus(); } catch (_) {}
+      return;
+    }
+    // Strategy 2: Direct location replace (works when popups are blocked)
+    // Slight delay so the order confirmation alert has time to close first.
+    setTimeout(() => {
+      try {
+        window.location.href = url;
+        return;
+      } catch (_) {}
+      // Strategy 3: Invisible <a> click (last resort — works in restrictive WebViews)
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => document.body.removeChild(a), 500);
+      } catch (err) {
+        console.error('WhatsApp redirect failed on all strategies:', err);
+      }
+    }, 300);
+  }
+
   try {
     const res = await fetch(`${API_BASE}/orders`, {
       method: 'POST',
@@ -1007,100 +1040,72 @@ async function handleCheckoutSubmit(e) {
     });
 
     if (!res.ok) throw new Error("Could not process order details.");
-    
+
     const responseData = await res.json();
-    
+
     if (responseData.success) {
-      const finalizeOrder = (formEl, whatsappUrl) => {
-        // Save customer details in localStorage for autofill next time
-        const customerDetails = {
-          name: orderPayload.customerName,
-          phone: orderPayload.customerPhone,
-          email: orderPayload.customerEmail,
-          address: orderPayload.deliveryAddress,
-          landmark: orderPayload.landmark
-        };
-        localStorage.setItem('rs_customer_details', JSON.stringify(customerDetails));
-
-        // Clear cart
-        state.cart = [];
-        saveCart();
-        updateCartUI();
-        
-        // Close Cart Drawer
-        document.getElementById('cart-drawer').classList.remove('open');
-        
-        // Reset form but immediately prefill the saved details back
-        formEl.reset();
-        prefillCheckoutForm();
-
-        // Notify User
-        alert("Order placed successfully!\nWe are now redirecting you to WhatsApp to confirm your slot.");
-
-        // Open WhatsApp automatically in a new window/tab
-        window.open(whatsappUrl, '_blank');
+      // Save customer details in localStorage for autofill next time
+      const customerDetails = {
+        name: orderPayload.customerName,
+        phone: orderPayload.customerPhone,
+        email: orderPayload.customerEmail,
+        address: orderPayload.deliveryAddress,
+        landmark: orderPayload.landmark
       };
+      localStorage.setItem('rs_customer_details', JSON.stringify(customerDetails));
 
-      if (responseData.paymentRequired) {
-        checkoutBtn.innerText = "Awaiting payment...";
-        
-        const options = {
-          key: responseData.keyId,
-          amount: responseData.amount,
-          currency: responseData.currency,
-          name: "Rasoi Sakhi",
-          description: "Vegetables Order Payment",
-          order_id: responseData.razorpayOrderId,
-          prefill: {
-            name: orderPayload.customerName,
-            contact: orderPayload.customerPhone,
-            email: orderPayload.customerEmail
-          },
-          theme: {
-            color: "#4CAF50"
-          },
-          handler: async function (response) {
-            checkoutBtn.innerText = "Verifying payment...";
-            try {
-              // Wait and verify payment on the backend
-              const verifyRes = await fetch(`${API_BASE}/orders/${responseData.orderId}/verify-payment`);
-              const verifyData = await verifyRes.json();
-              if (verifyRes.ok && verifyData.verified) {
-                finalizeOrder(e.target, responseData.whatsappUrl);
-              } else {
-                alert("Payment verification pending. We will contact you on WhatsApp to confirm.");
-                finalizeOrder(e.target, responseData.whatsappUrl);
-              }
-            } catch (err) {
-              console.error("Payment verification failed on client:", err);
-              finalizeOrder(e.target, responseData.whatsappUrl);
-            }
-          },
-          modal: {
-            ondismiss: function () {
-              checkoutBtn.disabled = false;
-              checkoutBtn.innerText = "Order Now via WhatsApp & Excel";
-            }
-          }
-        };
+      // Clear cart
+      state.cart = [];
+      saveCart();
+      updateCartUI();
 
-        const rzp1 = new Razorpay(options);
-        rzp1.open();
-      } else {
-        // COD Flow
-        finalizeOrder(e.target, responseData.whatsappUrl);
-      }
+      // Close Cart Drawer
+      document.getElementById('cart-drawer').classList.remove('open');
+
+      // Reset form but immediately prefill the saved details back
+      e.target.reset();
+      prefillCheckoutForm();
+
+      // Show confirmation then redirect to WhatsApp
+      alert("Order placed successfully!\nWe are now redirecting you to WhatsApp to confirm your slot.");
+      openWhatsApp(responseData.whatsappUrl);
+
+      // -----------------------------------------------------------------
+      // RAZORPAY ONLINE PAYMENT — COMMENTED OUT
+      // Client now uses their own QR Code / UPI. To re-enable, uncomment:
+      // -----------------------------------------------------------------
+      // if (responseData.paymentRequired) {
+      //   checkoutBtn.innerText = "Awaiting payment...";
+      //   const options = {
+      //     key: responseData.keyId,
+      //     amount: responseData.amount,
+      //     currency: responseData.currency,
+      //     name: "Rasoi Sakhi",
+      //     description: "Vegetables Order Payment",
+      //     order_id: responseData.razorpayOrderId,
+      //     prefill: { name: orderPayload.customerName, contact: orderPayload.customerPhone, email: orderPayload.customerEmail },
+      //     theme: { color: "#4CAF50" },
+      //     handler: async function (response) {
+      //       checkoutBtn.innerText = "Verifying payment...";
+      //       const verifyRes = await fetch(`${API_BASE}/orders/${responseData.orderId}/verify-payment`);
+      //       const verifyData = await verifyRes.json();
+      //       finalizeOrder(e.target, responseData.whatsappUrl);
+      //     },
+      //     modal: { ondismiss: function () { checkoutBtn.disabled = false; checkoutBtn.innerText = "Order Now via WhatsApp & Excel"; } }
+      //   };
+      //   const rzp1 = new Razorpay(options);
+      //   rzp1.open();
+      // } else {
+      //   finalizeOrder(e.target, responseData.whatsappUrl);
+      // }
+      // -----------------------------------------------------------------
     }
   } catch (err) {
     console.error("Order processing error:", err);
     alert("There was an issue processing your order. Please try again or call support.");
   } finally {
-    // Only re-enable button if payment is not required (since Razorpay handles its own buttons or ondismiss)
-    const needsBypass = typeof responseData === 'undefined' || !responseData || !responseData.paymentRequired;
-    if (needsBypass) {
-      checkoutBtn.disabled = false;
-      checkoutBtn.innerText = "Order Now via WhatsApp & Excel";
-    }
+    checkoutBtn.disabled = false;
+    checkoutBtn.innerText = "Order Now via WhatsApp & Excel";
   }
 }
 

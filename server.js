@@ -6,25 +6,21 @@ const path = require('path');
 const https = require('https');
 const url = require('url');
 const fs = require('fs');
-const Razorpay = require('razorpay');
+// const Razorpay = require('razorpay'); // RAZORPAY COMMENTED OUT — client uses QR Code / UPI instead
 require('dotenv').config();
 
 const db = require('./db');
 
-// Initialize Razorpay SDK client if keys are provided and are not placeholders
-let razorpay = null;
-if (process.env.RAZORPAY_KEY_ID && 
-    process.env.RAZORPAY_KEY_SECRET && 
-    process.env.RAZORPAY_KEY_ID !== 'rzp_test_placeholder_key_id' && 
-    process.env.RAZORPAY_KEY_SECRET !== 'placeholder_key_secret') {
-  razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET
-  });
-  console.log("Razorpay SDK client initialized successfully with custom keys.");
-} else {
-  console.log("Razorpay key configurations missing or placeholders detected in env. Online payments will fall back to simulation.");
-}
+// --- RAZORPAY INTEGRATION DISABLED ---
+// Client uses their own QR Code / UPI for payments.
+// To re-enable, uncomment the require above, restore the init block below,
+// and restore the /api/payments/webhook and /api/orders/:id/verify-payment endpoints.
+// let razorpay = null;
+// if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET &&
+//     process.env.RAZORPAY_KEY_ID !== 'rzp_test_placeholder_key_id' &&
+//     process.env.RAZORPAY_KEY_SECRET !== 'placeholder_key_secret') {
+//   razorpay = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+// }
 
 const isVercel = process.env.VERCEL || process.env.NOW_BUILDER;
 const dataDir = isVercel ? '/tmp' : path.join(__dirname, 'data');
@@ -282,49 +278,14 @@ app.post('/api/orders', async (req, res) => {
     }
     const whatsappUrl = `https://wa.me/${targetPhone}?text=${encodedMsg}`;
 
-    const isOnlinePayment = paymentMethod.toLowerCase().includes('online') || paymentMethod.toLowerCase().includes('razorpay');
+    // --- RAZORPAY ONLINE PAYMENT BRANCH DISABLED ---
+    // All orders (including QR Code / UPI) now go through the standard flow below.
+    // Razorpay gateway integration is commented out; client uses their own QR Code.
+    //
+    // const isOnlinePayment = paymentMethod.toLowerCase().includes('online') || paymentMethod.toLowerCase().includes('razorpay');
+    // if (isOnlinePayment) { ... razorpay.orders.create(...) ... }
 
-    if (isOnlinePayment) {
-      let rzpOrderId = null;
-      if (razorpay) {
-        try {
-          const options = {
-            amount: Math.round(totalAmount * 100), // in paise
-            currency: "INR",
-            receipt: orderId
-          };
-          const rzpOrder = await razorpay.orders.create(options);
-          rzpOrderId = rzpOrder.id;
-        } catch (rzpErr) {
-          console.error("Error creating Razorpay order:", rzpErr);
-          return res.status(500).json({ error: "Failed to initiate payment gateway order." });
-        }
-      } else {
-        // Simulation mode
-        rzpOrderId = `order_sim_${Date.now()}`;
-      }
-
-      // Save mapping
-      await db.savePaymentMapping(rzpOrderId, orderId, {
-        amount: totalAmount,
-        customerPhone,
-        customerName,
-        isSimulated: !razorpay
-      });
-
-      return res.json({
-        success: true,
-        paymentRequired: true,
-        keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder_key_id',
-        amount: Math.round(totalAmount * 100),
-        currency: "INR",
-        razorpayOrderId: rzpOrderId,
-        orderId: orderId,
-        whatsappUrl
-      });
-    }
-
-    // COD Flow: Trigger Google Sheets Webhook immediately
+    // Trigger Google Sheets Webhook for all orders
     if (settings.googleSheetsWebhookUrl) {
       triggerGoogleSheetsWebhook(settings.googleSheetsWebhookUrl, savedOrder);
     }
@@ -341,133 +302,20 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-// Razorpay Payment Webhook (Server-to-Server Verification)
-app.post('/api/payments/webhook', async (req, res) => {
-  const signature = req.headers['x-razorpay-signature'];
-  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-
-  console.log("Payment webhook event received:", req.body);
-
-  // If secret is set, verify the signature
-  if (webhookSecret && signature) {
-    const crypto = require('crypto');
-    const shasum = crypto.createHmac('sha256', webhookSecret);
-    shasum.update(JSON.stringify(req.body));
-    const digest = shasum.digest('hex');
-
-    if (digest !== signature) {
-      console.warn("Invalid Razorpay webhook signature detected!");
-      return res.status(400).send("Invalid webhook signature.");
-    }
-    console.log("Razorpay webhook signature verified successfully.");
-  } else {
-    console.log("No webhook secret configured or signature missing. Bypassing signature check for simulated requests.");
-  }
-
-  try {
-    let rzpOrderId = null;
-    let eventName = null;
-
-    if (req.body.event) {
-      // Real Razorpay webhook format
-      eventName = req.body.event;
-      if (req.body.payload && req.body.payload.order) {
-        rzpOrderId = req.body.payload.order.entity.id;
-      } else if (req.body.payload && req.body.payload.payment) {
-        rzpOrderId = req.body.payload.payment.entity.order_id;
-      }
-    } else {
-      // Simulated direct webhook call for local debugging
-      rzpOrderId = req.body.razorpayOrderId;
-      eventName = 'order.paid';
-    }
-
-    if (!rzpOrderId) {
-      console.error("No Razorpay Order ID found in payload.");
-      return res.status(400).json({ error: "No order ID found in payload." });
-    }
-
-    console.log(`Processing webhook payment for Razorpay Order ID: ${rzpOrderId}, Event: ${eventName}`);
-
-    // Only process successful payments
-    if (eventName === 'order.paid' || eventName === 'payment.captured' || !req.body.event) {
-      const mapping = await db.getPaymentMapping(rzpOrderId);
-      if (!mapping) {
-        console.error(`No local order mapping found for Razorpay Order ID: ${rzpOrderId}`);
-        return res.status(404).json({ error: "Order mapping not found in mappings table." });
-      }
-
-      const { orderId } = mapping;
-      const orders = await db.getCollection('orders');
-      const order = orders.find(o => o.id === orderId);
-
-      if (!order) {
-        console.error(`Mapped local order ${orderId} not found in database.`);
-        return res.status(404).json({ error: "Local order not found." });
-      }
-
-      if (order.status === "Payment Pending") {
-        console.log(`Payment confirmed for Order ${orderId}. Updating status to Pending.`);
-        const updatedOrder = await db.updateOrderStatus(orderId, "Pending");
-        
-        // Sync to Google Sheets
-        const settings = await db.getSettings();
-        if (settings.googleSheetsWebhookUrl && updatedOrder) {
-          triggerGoogleSheetsWebhook(settings.googleSheetsWebhookUrl, updatedOrder);
-        }
-      } else {
-        console.log(`Order ${orderId} status is already '${order.status}'. Webhook skip double processing.`);
-      }
-
-      // Update mapping status to verified
-      await db.savePaymentMapping(rzpOrderId, orderId, { ...mapping, status: 'verified', updatedAt: new Date().toISOString() });
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Webhook processing failed:", err);
-    res.status(500).json({ error: "Internal server error." });
-  }
-});
-
-// Client-side Payment Verification Endpoint
-app.get('/api/orders/:id/verify-payment', async (req, res) => {
-  try {
-    const orderId = req.params.id;
-    const orders = await db.getCollection('orders');
-    const order = orders.find(o => o.id === orderId);
-
-    if (!order) {
-      return res.status(404).json({ error: "Order not found." });
-    }
-
-    if (order.status !== "Payment Pending") {
-      return res.json({ success: true, verified: true, status: order.status });
-    }
-
-    // Check mapping to see if this is a simulated transaction
-    const mapping = await db.getPaymentMappingByOrderId(orderId);
-    const isSimulated = mapping ? !!mapping.isSimulated : false;
-
-    // DX Feature: auto-resolve simulated transactions on client request
-    if (isSimulated) {
-      console.log(`Auto-verifying simulated payment order ${orderId} on request.`);
-      const updatedOrder = await db.updateOrderStatus(orderId, "Pending");
-      
-      const settings = await db.getSettings();
-      if (settings.googleSheetsWebhookUrl && updatedOrder) {
-        triggerGoogleSheetsWebhook(settings.googleSheetsWebhookUrl, updatedOrder);
-      }
-      return res.json({ success: true, verified: true, status: "Pending" });
-    }
-
-    // Otherwise, still waiting for the real webhook transaction
-    res.json({ success: true, verified: false, status: order.status });
-  } catch (err) {
-    console.error("Error verifying payment:", err);
-    res.status(500).json({ error: "Internal server error." });
-  }
-});
+// =============================================================================
+// RAZORPAY WEBHOOK & VERIFY ENDPOINTS — DISABLED (client uses QR Code / UPI)
+// To re-enable: uncomment the blocks below.
+// =============================================================================
+//
+// app.post('/api/payments/webhook', async (req, res) => {
+//   const signature = req.headers['x-razorpay-signature'];
+//   ... (full webhook logic removed — see git history to restore)
+// });
+//
+// app.get('/api/orders/:id/verify-payment', async (req, res) => {
+//   ... (full verify-payment logic removed — see git history to restore)
+// });
+// =============================================================================
 
 /**
  * ADMIN AUTHENTICATION
