@@ -3,6 +3,7 @@
 // ==========================================================================
 
 const API_BASE = '/api';
+let ordersLimit = 50;
 
 // Core State
 let state = {
@@ -18,7 +19,8 @@ let state = {
   adminSettings: null,
   knownOrderIds: new Set(),
   hasInitiallyLoadedOrders: false,
-  modalHistoryPushed: false
+  modalHistoryPushed: false,
+  totalOrders: 0
 };
 
 // --- INITIALIZATION ---
@@ -1355,6 +1357,15 @@ function setupAdminListeners() {
   // Logout Form
   document.getElementById('admin-logout-btn').addEventListener('click', handleAdminLogout);
 
+  // Load More Orders Button
+  const loadMoreBtn = document.getElementById('orders-load-more-btn');
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener('click', () => {
+      ordersLimit += 50;
+      loadAdminOrders();
+    });
+  }
+
   // Settings Save Form
   document.getElementById('admin-settings-form').addEventListener('submit', saveAdminSettings);
 
@@ -1467,6 +1478,7 @@ function handleAdminLogout() {
   state.adminToken = null;
   localStorage.removeItem('rs_admin_token');
   stopAdminPolling();
+  ordersLimit = 50;
   
   // UI views update
   document.getElementById('admin-dashboard-panel').classList.add('hide');
@@ -1594,11 +1606,12 @@ let adminOrders = [];
 
 async function loadAdminOrders() {
   try {
-    const res = await fetch(`${API_BASE}/admin/orders`, {
+    const res = await fetch(`${API_BASE}/admin/orders?limit=${ordersLimit}&offset=0`, {
       headers: { 'Authorization': `Bearer ${state.adminToken}` }
     });
     if (res.ok) {
-      const orders = await res.json();
+      const { orders, total } = await res.json();
+      state.totalOrders = total || 0;
       
       let hasNewUnread = false;
       orders.forEach(o => {
@@ -1727,6 +1740,16 @@ function renderAdminOrdersTable() {
     `;
   }).join('');
 
+  // Show/Hide Load More container based on loaded vs total count
+  const loadMoreContainer = document.getElementById('orders-load-more-container');
+  if (loadMoreContainer) {
+    if (adminOrders.length < (state.totalOrders || 0)) {
+      loadMoreContainer.classList.remove('hide');
+    } else {
+      loadMoreContainer.classList.add('hide');
+    }
+  }
+ 
   updateUnreadOrdersCount();
 }
 

@@ -509,6 +509,26 @@ module.exports = {
     }
   },
 
+  getOrdersPaginated: async (limit, offset) => {
+    if (useSupabase) {
+      const { data, error, count } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact' })
+        .order('createdAt', { ascending: false })
+        .range(offset, offset + limit - 1);
+      if (error) {
+        console.error("Supabase error fetching paginated orders:", error);
+        throw error;
+      }
+      return { orders: data || [], total: count || 0 };
+    } else {
+      const db = readDB();
+      const list = db.orders || [];
+      const sliced = list.slice(offset, offset + limit);
+      return { orders: sliced, total: list.length };
+    }
+  },
+
   addOrder: async (order) => {
     if (useSupabase) {
       const { deliveryPincode, ...supabaseOrder } = order;

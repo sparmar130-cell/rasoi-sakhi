@@ -598,12 +598,14 @@ app.post('/api/admin/settings', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Get Orders
+// Get Orders (Paginated)
 app.get('/api/admin/orders', authenticateAdmin, async (req, res) => {
+  const limit = parseInt(req.query.limit) || 50;
+  const offset = parseInt(req.query.offset) || 0;
+
   try {
-    const orders = await db.getCollection('orders');
-    // isRead is stored in the DB itself — no file merging needed
-    res.json(orders);
+    const { orders, total } = await db.getOrdersPaginated(limit, offset);
+    res.json({ orders, total });
   } catch (err) {
     console.error("Error fetching orders:", err);
     res.status(500).json({ error: "Could not fetch orders." });
