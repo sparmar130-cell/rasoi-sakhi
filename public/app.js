@@ -2099,9 +2099,21 @@ async function enablePushNotifications() {
       isPushEnabled = true;
       updatePushButtonUI(true, true);
       showInPageToast('Push notifications enabled — you will be alerted when payments arrive.');
+    } else {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || `Server responded with status ${res.status}`);
     }
   } catch (err) {
-    alert('Failed to enable push notifications. Please try again.');
+    console.error('Error enabling push notifications:', err);
+    
+    let helpMsg = `Failed to enable push notifications: ${err.message}\n\n`;
+    if (navigator.userAgent.match(/iPhone|iPad|iPod/i)) {
+      helpMsg += `Troubleshooting for iOS:\n1. Open this website in Safari.\n2. Tap the Share button and select "Add to Home Screen".\n3. Open the app from your Home Screen and log in to enable notifications.`;
+    } else {
+      helpMsg += `Troubleshooting:\n1. Make sure notifications are allowed for this site in your browser settings.\n2. Ensure you are using a secure connection (HTTPS) or localhost.`;
+    }
+    
+    alert(helpMsg);
     updatePushButtonUI(true, false);
   }
 }
