@@ -1010,7 +1010,7 @@ app.get('/api/admin/analytics', authenticateAdmin, async (req, res) => {
 
 // Submit Contact Message
 app.post('/api/contact', contactLimiter, async (req, res) => {
-  const { name, phone, message } = req.body;
+  const { name, email, phone, message } = req.body;
   if (!name || !phone || !message) {
     return res.status(400).json({ error: "Name, phone, and message are required." });
   }
@@ -1019,6 +1019,7 @@ app.post('/api/contact', contactLimiter, async (req, res) => {
     const contactMsg = {
       name,
       phone,
+      email: email || "",
       message,
       createdAt: new Date().toISOString(),
       isResolved: false

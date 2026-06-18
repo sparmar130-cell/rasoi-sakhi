@@ -835,6 +835,7 @@ module.exports = {
       const mappedMsg = {
         name: supabaseMsg.name,
         phone: supabaseMsg.phone,
+        email: supabaseMsg.email || "",
         message: supabaseMsg.message,
         created_at: supabaseMsg.createdAt,
         is_resolved: supabaseMsg.isResolved
@@ -848,6 +849,7 @@ module.exports = {
         id: data.id,
         name: data.name,
         phone: data.phone,
+        email: data.email,
         message: data.message,
         createdAt: data.created_at,
         isResolved: data.is_resolved
@@ -880,6 +882,7 @@ module.exports = {
         id: row.id,
         name: row.name,
         phone: row.phone,
+        email: row.email,
         message: row.message,
         createdAt: row.created_at,
         isResolved: row.is_resolved

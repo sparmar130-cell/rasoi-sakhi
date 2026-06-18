@@ -673,9 +673,10 @@ function setupEventListeners() {
       
       const name = document.getElementById('contact-name').value.trim();
       const phone = document.getElementById('contact-phone').value.trim();
+      const email = document.getElementById('contact-email').value.trim();
       const message = document.getElementById('contact-message').value.trim();
       
-      if (!name || !phone || !message) {
+      if (!name || !phone || !email || !message) {
         statusEl.className = 'form-status error';
         statusEl.innerText = 'All fields are required.';
         return;
@@ -691,7 +692,7 @@ function setupEventListeners() {
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ name, phone, message })
+          body: JSON.stringify({ name, phone, email, message })
         });
         
         const data = await res.json();
@@ -1876,6 +1877,7 @@ function renderAdminMessagesTable() {
     tr.innerHTML = `
       <td>${dateStr}</td>
       <td><strong>${escapeHTML(msg.name)}</strong></td>
+      <td>${msg.email ? `<a href="mailto:${escapeHTML(msg.email)}" style="color: var(--color-primary);">${escapeHTML(msg.email)}</a>` : '<span style="color: var(--color-text-muted); font-style: italic;">None</span>'}</td>
       <td>
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <span>${escapeHTML(msg.phone)}</span>
