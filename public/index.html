@@ -1074,26 +1074,27 @@ function doPost(e) {
               </div>
             </div>
             
-            <div class="form-row">
-              <div class="form-group">
-                <label for="cust-slot">Delivery Slot</label>
-                <select id="cust-slot" required>
-                  <!-- Dynamically populated to prevent user confusion -->
-                </select>
-                <span class="field-hint" style="margin-top: 6px; font-size: 0.72rem; line-height: 1.5; display: block;">
-                  Morning (6–7:30 AM): order the previous night &nbsp;·&nbsp;
-                  Afternoon (11 AM–12:30 PM): order by 10 AM &nbsp;·&nbsp;
-                  Evening (5–6:30 PM): order by 4 PM
-                </span>
-              </div>
-              <div class="form-group">
-                <label for="cust-payment">Payment Option</label>
-                <select id="cust-payment" required>
-                  <option value="Cash On Delivery">Cash On Delivery</option>
-                  <option value="UPI Payment">UPI Payment (Razorpay)</option>
-                </select>
-              </div>
+
+            <div class="form-group">
+              <label for="cust-slot">Delivery Slot</label>
+              <select id="cust-slot" required>
+                <!-- Dynamically populated to prevent user confusion -->
+              </select>
+              <span class="field-hint" style="margin-top: 6px; font-size: 0.72rem; line-height: 1.5; display: block;">
+                Morning (6–7:30 AM): order the previous night &nbsp;·&nbsp;
+                Afternoon (11 AM–12:30 PM): order by 10 AM &nbsp;·&nbsp;
+                Evening (5–6:30 PM): order by 4 PM
+              </span>
             </div>
+
+            <div class="form-group">
+              <label for="cust-payment">Payment Option</label>
+              <select id="cust-payment" required>
+                <option value="Cash On Delivery">Cash On Delivery</option>
+                <option value="UPI Payment">UPI Payment (Razorpay)</option>
+              </select>
+            </div>
+
 
             <div id="checkout-upi-helper" class="upi-instructions hide">
               <p>Secure online payment via UPI, Credit/Debit Cards, or NetBanking powered by Razorpay.</p>
