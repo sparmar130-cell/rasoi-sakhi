@@ -1476,6 +1476,12 @@ function setupAdminListeners() {
   // Settings Save Form
   document.getElementById('admin-settings-form').addEventListener('submit', saveAdminSettings);
 
+  // Admin Credentials Update Form
+  const credForm = document.getElementById('admin-credentials-form');
+  if (credForm) {
+    credForm.addEventListener('submit', handleUpdateCredentials);
+  }
+
   // Export CSV
   document.getElementById('admin-export-orders-btn').addEventListener('click', downloadOrdersCSV);
 
@@ -1622,6 +1628,18 @@ async function loadAdminDashboard() {
     }
   } catch (err) { console.error("Error loading settings:", err); }
 
+  // Load Admin Profile
+  try {
+    const res = await fetch(`${API_BASE}/admin/profile`, {
+      headers: { 'Authorization': `Bearer ${state.adminToken}` }
+    });
+    if (res.ok) {
+      const profile = await res.json();
+      const userEl = document.getElementById('cred-username');
+      if (userEl) userEl.value = profile.username || '';
+    }
+  } catch (err) { console.error("Error loading admin profile:", err); }
+
   // Load Analytics
   try {
     const res = await fetch(`${API_BASE}/admin/analytics`, {
@@ -1687,6 +1705,57 @@ async function saveAdminSettings(e) {
   } catch (err) {
     statusEl.className = 'form-status error';
     statusEl.innerText = 'Server communication error.';
+  }
+}
+
+async function handleUpdateCredentials(e) {
+  e.preventDefault();
+  
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const statusEl = document.getElementById('credentials-status');
+  
+  statusEl.className = 'form-status';
+  statusEl.innerText = 'Updating credentials...';
+  submitBtn.disabled = true;
+
+  const payload = {
+    username: document.getElementById('cred-username').value,
+    currentPassword: document.getElementById('cred-current-password').value,
+    newPassword: document.getElementById('cred-new-password').value
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/admin/update-credentials`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.adminToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      statusEl.className = 'form-status success';
+      statusEl.innerText = 'Credentials updated successfully!';
+      
+      // Update the active JWT token
+      state.adminToken = data.token;
+      localStorage.setItem('rs_admin_token', data.token);
+      
+      // Clear password fields
+      document.getElementById('cred-current-password').value = '';
+      document.getElementById('cred-new-password').value = '';
+    } else {
+      statusEl.className = 'form-status error';
+      statusEl.innerText = data.error || 'Failed to update credentials.';
+    }
+  } catch (err) {
+    console.error("Error updating credentials:", err);
+    statusEl.className = 'form-status error';
+    statusEl.innerText = 'Server communication error.';
+  } finally {
+    submitBtn.disabled = false;
   }
 }
 

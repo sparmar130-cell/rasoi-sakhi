@@ -648,6 +648,71 @@ app.post('/api/admin/login', loginLimiter, async (req, res) => {
  * SECURE ADMIN APIS
  */
 
+// Get Admin Profile
+app.get('/api/admin/profile', authenticateAdmin, async (req, res) => {
+  try {
+    const users = await db.getCollection('users');
+    const admin = users.find(u => u.id === req.adminId);
+    if (!admin) {
+      return res.status(404).json({ error: "Admin user not found." });
+    }
+    res.json({ username: admin.username });
+  } catch (err) {
+    console.error("Error fetching admin profile:", err);
+    res.status(500).json({ error: "Failed to fetch admin profile." });
+  }
+});
+
+// Update Admin Credentials
+app.post('/api/admin/update-credentials', authenticateAdmin, async (req, res) => {
+  const { username, currentPassword, newPassword } = req.body;
+  if (!username || !currentPassword) {
+    return res.status(400).json({ error: "Username and current password are required." });
+  }
+
+  try {
+    const users = await db.getCollection('users');
+    const adminIndex = users.findIndex(u => u.id === req.adminId);
+    if (adminIndex === -1) {
+      return res.status(404).json({ error: "Admin user not found." });
+    }
+
+    const admin = users[adminIndex];
+
+    // Verify current password
+    if (!bcrypt.compareSync(currentPassword, admin.passwordHash)) {
+      return res.status(401).json({ error: "Incorrect current password." });
+    }
+
+    // Update username if changed
+    const trimmedUsername = username.trim();
+    if (trimmedUsername) {
+      admin.username = trimmedUsername;
+    }
+
+    // Update password if new password is provided
+    if (newPassword && newPassword.trim()) {
+      admin.passwordHash = bcrypt.hashSync(newPassword.trim(), 10);
+    }
+
+    users[adminIndex] = admin;
+    const saved = await db.saveCollection('users', users);
+    if (!saved) {
+      return res.status(500).json({ error: "Failed to save updated credentials." });
+    }
+
+    // Generate new token with updated username so it remains valid
+    const token = jwt.sign({ id: admin.id, username: admin.username }, JWT_SECRET, {
+      expiresIn: '24h'
+    });
+
+    res.json({ success: true, message: "Credentials updated successfully.", token });
+  } catch (err) {
+    console.error("Error updating admin credentials:", err);
+    res.status(500).json({ error: "Failed to update credentials." });
+  }
+});
+
 // Get Admin Settings
 app.get('/api/admin/settings', authenticateAdmin, async (req, res) => {
   try {
