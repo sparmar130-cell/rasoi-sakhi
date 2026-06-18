@@ -627,7 +627,7 @@ app.post('/api/admin/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   try {
     const users = await db.getCollection('users');
-    const admin = users.find(u => u.username === username);
+    const admin = users.find(u => u.username && u.username.toLowerCase() === username.toLowerCase());
 
     if (!admin || !bcrypt.compareSync(password, admin.passwordHash)) {
       return res.status(401).json({ error: "Invalid username or password." });
