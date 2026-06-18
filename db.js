@@ -827,5 +827,83 @@ module.exports = {
       db.pushSubscriptions = db.pushSubscriptions.filter(s => s.endpoint !== endpoint);
       return writeDB(db);
     }
+  },
+
+  saveContactMessage: async (contactMsg) => {
+    if (useSupabase) {
+      const { id, ...supabaseMsg } = contactMsg;
+      const mappedMsg = {
+        name: supabaseMsg.name,
+        phone: supabaseMsg.phone,
+        message: supabaseMsg.message,
+        created_at: supabaseMsg.createdAt,
+        is_resolved: supabaseMsg.isResolved
+      };
+      const { data, error } = await supabase.from('contact_messages').insert(mappedMsg).select().single();
+      if (error) {
+        console.error("Supabase error saving contact message:", error);
+        return null;
+      }
+      return {
+        id: data.id,
+        name: data.name,
+        phone: data.phone,
+        message: data.message,
+        createdAt: data.created_at,
+        isResolved: data.is_resolved
+      };
+    } else {
+      const db = readDB();
+      if (!db.contactMessages) db.contactMessages = [];
+      if (!contactMsg.id) {
+        contactMsg.id = Date.now();
+      }
+      db.contactMessages.unshift(contactMsg);
+      if (writeDB(db)) {
+        return contactMsg;
+      }
+      return null;
+    }
+  },
+
+  getContactMessages: async () => {
+    if (useSupabase) {
+      const { data, error } = await supabase
+        .from('contact_messages')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) {
+        console.error("Supabase error fetching contact messages:", error);
+        return [];
+      }
+      return (data || []).map(row => ({
+        id: row.id,
+        name: row.name,
+        phone: row.phone,
+        message: row.message,
+        createdAt: row.created_at,
+        isResolved: row.is_resolved
+      }));
+    } else {
+      const db = readDB();
+      return db.contactMessages || [];
+    }
+  },
+
+  deleteContactMessage: async (id) => {
+    if (useSupabase) {
+      const { error } = await supabase.from('contact_messages').delete().eq('id', id);
+      if (error) {
+        console.error("Supabase error deleting contact message:", error);
+        return false;
+      }
+      return true;
+    } else {
+      const db = readDB();
+      if (!db.contactMessages) return true;
+      db.contactMessages = db.contactMessages.filter(m => String(m.id) !== String(id));
+      return writeDB(db);
+    }
   }
 };
+

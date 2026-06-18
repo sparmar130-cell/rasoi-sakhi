@@ -46,7 +46,8 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'rasoi-sakhi-secret-key-2026';
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- RATE LIMITERS ---
@@ -66,6 +67,15 @@ const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many login attempts. Please wait 15 minutes before trying again.' }
+});
+
+// Protects contact form submissions from spam (5 submissions per 10 minutes per IP)
+const contactLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many messages sent. Please wait a few minutes and try again.' }
 });
 
 // Middleware to authenticate Admin JWT
@@ -123,6 +133,44 @@ async function sendPushNotification(order) {
     console.error("Error sending push notifications:", err);
   }
 }
+
+async function sendNewOrderPushNotification(order) {
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    console.log("Push notifications: VAPID not configured, skipping new order alert");
+    return;
+  }
+  try {
+    const subscriptions = await db.getPushSubscriptions();
+    if (!subscriptions || subscriptions.length === 0) return;
+
+    const payload = JSON.stringify({
+      title: 'New Order Received! 🥬',
+      body: `${order.customerName} ordered for ₹${order.totalAmount} (Slot: ${order.deliverySlot})`,
+      tag: `new-order-${order.id}`,
+      url: '/#admin-section',
+      orderId: order.id
+    });
+
+    const pushPromises = subscriptions.map(async (sub) => {
+      try {
+        await webpush.sendNotification(sub, payload);
+      } catch (err) {
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          console.log(`Removing invalid push subscription during new order: ${sub.endpoint.substring(0, 50)}...`);
+          await db.deletePushSubscription(sub.endpoint);
+        } else {
+          console.error(`Push failed for subscription: ${err.message}`);
+        }
+      }
+    });
+
+    await Promise.allSettled(pushPromises);
+    console.log(`New order push notifications sent for order: ${order.id}`);
+  } catch (err) {
+    console.error("Error sending new order push notifications:", err);
+  }
+}
+
 
 // Trigger Webhook helper (Google Sheets Integration)
 function triggerGoogleSheetsWebhook(webhookUrl, order) {
@@ -284,6 +332,13 @@ app.post('/api/orders', orderLimiter, async (req, res) => {
 
     if (!savedOrder) {
       return res.status(500).json({ error: "Could not save order." });
+    }
+
+    // Send push notification to admin about the new order (Option B)
+    try {
+      sendNewOrderPushNotification(savedOrder);
+    } catch (pushErr) {
+      console.error("Error triggering new order push notification:", pushErr);
     }
 
     // Generate WhatsApp link for redirection
@@ -885,6 +940,87 @@ app.get('/api/admin/analytics', authenticateAdmin, async (req, res) => {
   } catch (err) {
     console.error("Error compiling analytics:", err);
     res.status(500).json({ error: "Failed to fetch analytics." });
+  }
+});
+
+// Submit Contact Message
+app.post('/api/contact', contactLimiter, async (req, res) => {
+  const { name, phone, message } = req.body;
+  if (!name || !phone || !message) {
+    return res.status(400).json({ error: "Name, phone, and message are required." });
+  }
+
+  try {
+    const contactMsg = {
+      name,
+      phone,
+      message,
+      createdAt: new Date().toISOString(),
+      isResolved: false
+    };
+
+    const saved = await db.saveContactMessage(contactMsg);
+    if (!saved) {
+      return res.status(500).json({ error: "Failed to save contact message." });
+    }
+
+    // Send push notification to admin if webpush is configured
+    try {
+      if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+        const subscriptions = await db.getPushSubscriptions();
+        if (subscriptions && subscriptions.length > 0) {
+          const payload = JSON.stringify({
+            title: 'New Contact Message!',
+            body: `From ${name}: "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}"`,
+            tag: `contact-${Date.now()}`,
+            url: '/#admin-section'
+          });
+          const pushPromises = subscriptions.map(async (sub) => {
+            try {
+              await webpush.sendNotification(sub, payload);
+            } catch (err) {
+              if (err.statusCode === 404 || err.statusCode === 410) {
+                await db.deletePushSubscription(sub.endpoint);
+              }
+            }
+          });
+          await Promise.allSettled(pushPromises);
+        }
+      }
+    } catch (pushErr) {
+      console.error("Error sending contact push notification:", pushErr);
+    }
+
+    res.json({ success: true, message: "Message sent successfully!" });
+  } catch (err) {
+    console.error("Error submitting contact form:", err);
+    res.status(500).json({ error: "Failed to process contact message." });
+  }
+});
+
+// Get Contact Messages (Admin only)
+app.get('/api/admin/contact-messages', authenticateAdmin, async (req, res) => {
+  try {
+    const messages = await db.getContactMessages();
+    res.json(messages);
+  } catch (err) {
+    console.error("Error fetching contact messages:", err);
+    res.status(500).json({ error: "Failed to fetch contact messages." });
+  }
+});
+
+// Delete Contact Message (Admin only)
+app.delete('/api/admin/contact-messages/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const deleted = await db.deleteContactMessage(req.params.id);
+    if (deleted) {
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: "Message not found." });
+    }
+  } catch (err) {
+    console.error("Error deleting contact message:", err);
+    res.status(500).json({ error: "Failed to delete contact message." });
   }
 });
 

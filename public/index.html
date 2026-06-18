@@ -593,6 +593,7 @@
             <button class="admin-tab active" data-tab="admin-orders-tab">Orders <span id="admin-orders-unread-badge" class="unread-count-badge hide">0</span></button>
             <button class="admin-tab" data-tab="admin-products-tab">Products</button>
             <button class="admin-tab" data-tab="admin-settings-tab">Settings</button>
+            <button class="admin-tab" data-tab="admin-messages-tab">Messages</button>
           </div>
 
           <!-- Orders Tab Content -->
@@ -833,10 +834,68 @@ function doPost(e) {
             </div>
           </div>
 
+          <!-- Messages Tab Content -->
+          <div id="admin-messages-tab" class="admin-tab-content">
+            <div class="tab-header">
+              <h3>Customer Messages</h3>
+            </div>
+            <p style="color: var(--color-text-muted); margin-bottom: var(--spacing-md);">Manage inquiries and questions sent via the contact form.</p>
+            <div class="table-responsive">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Date & Time</th>
+                    <th>Customer Name</th>
+                    <th>Phone Number</th>
+                    <th>Message Details</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-messages-table-body">
+                  <!-- Messages injected dynamically -->
+                </tbody>
+              </table>
+              <div id="messages-empty-state" class="hide" style="text-align: center; padding: var(--spacing-xl) 0;">
+                <p style="color: var(--color-text-muted);">No messages found.</p>
+              </div>
+            </div>
+          </div>
+
         </div>
 
       </div>
     </section>
+
+    <!-- Order Confirmation Modal (Option A Fallback Screen) -->
+    <div id="order-success-modal" class="editor-overlay hide" style="justify-content: center; align-items: center; z-index: 200;">
+      <div class="editor-drawer" style="max-width: 450px; border-radius: 12px; height: auto; max-height: 90vh; text-align: center; box-shadow: var(--shadow-lg);">
+        <div style="padding: var(--spacing-md) 0; display: flex; flex-direction: column; align-items: center; gap: var(--spacing-sm);">
+          <!-- Success Icon -->
+          <div style="width: 64px; height: 64px; border-radius: 50%; background-color: rgba(76, 175, 80, 0.1); color: #4CAF50; display: flex; align-items: center; justify-content: center; margin-bottom: var(--spacing-xs);">
+            <svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+          </div>
+          <h2 style="font-family: var(--font-display); color: var(--color-primary); margin: 0;">Order Saved!</h2>
+          <p style="color: var(--color-text-muted); font-size: 0.95rem; line-height: 1.5; margin: 0 var(--spacing-sm) var(--spacing-sm) var(--spacing-sm);">
+            Your order has been recorded. To confirm your delivery slot, please send the order details to us on WhatsApp.
+          </p>
+          
+          <div class="order-details-box" style="width: 100%; background-color: var(--color-primary-light); padding: var(--spacing-sm); border-radius: 8px; margin-bottom: var(--spacing-md); text-align: left; font-size: 0.85rem; display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--color-border-soft);">
+            <div><strong>Order ID:</strong> <span id="success-order-id" style="font-family: monospace; font-weight: bold;">RS-XXXXXX</span></div>
+            <div><strong>Total Amount:</strong> <span id="success-order-total" style="font-weight: bold; color: var(--color-accent);">₹0</span></div>
+            <div><strong>Delivery Slot:</strong> <span id="success-order-slot">-</span></div>
+          </div>
+
+          <a id="success-whatsapp-btn" href="#" target="_blank" class="btn btn-primary" style="background-color: #25D366; border-color: #25D366; color: white; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 12px; font-weight: bold; border-radius: 30px; text-decoration: none; box-shadow: 0 4px 10px rgba(37, 211, 102, 0.2);">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12.03 2c-5.52 0-10 4.48-10 10 0 1.77.47 3.43 1.3 4.89l-1.38 5.07 5.23-1.37c1.4.77 2.99 1.2 4.66 1.2 5.52 0 10-4.48 10-10 0-5.52-4.48-10-10-10zm5.97 14.24c-.24.68-1.24 1.25-1.82 1.34-.54.09-1.2.14-3.64-.83-3.13-1.25-5.11-4.39-5.26-4.6-.16-.21-1.24-1.65-1.24-3.15 0-1.5.78-2.24 1.06-2.54.28-.31.62-.38.82-.38h.59c.19 0 .43-.07.67.51.25.61.85 2.06.92 2.21.07.15.12.33.02.52-.1.19-.15.31-.3.48-.15.17-.31.38-.44.51-.15.15-.3.31-.13.6.17.29.75 1.25 1.6 2.01.85.76 1.57.99 1.79 1.1.22.11.35.09.48-.06.13-.15.55-.64.7-.86.15-.22.3-.18.51-.1.21.08 1.34.63 1.57.75.23.12.38.18.44.28.06.1.06.59-.18 1.27z"/></svg>
+            Send to WhatsApp
+          </a>
+
+          <button id="success-modal-close-btn" class="btn btn-secondary" style="margin-top: var(--spacing-xs); width: 100%; border-radius: 30px; padding: 10px;">
+            Close & Return Home
+          </button>
+        </div>
+      </div>
+    </div>
 
   </main>
 

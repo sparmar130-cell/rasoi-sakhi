@@ -666,12 +666,50 @@ function setupEventListeners() {
   // Contact form submission
   const contactForm = document.getElementById('contact-us-form');
   if (contactForm) {
-    contactForm.addEventListener('submit', (e) => {
+    contactForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const statusEl = document.getElementById('contact-form-status');
-      statusEl.className = 'form-status success';
-      statusEl.innerText = 'Thank you! Your message has been sent successfully.';
-      contactForm.reset();
+      const submitBtn = contactForm.querySelector('button[type="submit"]');
+      
+      const name = document.getElementById('contact-name').value.trim();
+      const phone = document.getElementById('contact-phone').value.trim();
+      const message = document.getElementById('contact-message').value.trim();
+      
+      if (!name || !phone || !message) {
+        statusEl.className = 'form-status error';
+        statusEl.innerText = 'All fields are required.';
+        return;
+      }
+      
+      submitBtn.disabled = true;
+      statusEl.className = 'form-status info';
+      statusEl.innerText = 'Sending message...';
+      
+      try {
+        const res = await fetch(`${API_BASE}/contact`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ name, phone, message })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+          statusEl.className = 'form-status success';
+          statusEl.innerText = data.message || 'Thank you! Your message has been sent successfully.';
+          contactForm.reset();
+        } else {
+          statusEl.className = 'form-status error';
+          statusEl.innerText = data.error || 'Failed to send message. Please try again.';
+        }
+      } catch (err) {
+        console.error('Error sending contact message:', err);
+        statusEl.className = 'form-status error';
+        statusEl.innerText = 'Network error. Please check your connection.';
+      } finally {
+        submitBtn.disabled = false;
+      }
     });
   }
 
@@ -684,6 +722,16 @@ function setupEventListeners() {
       el.addEventListener('change', saveFormDetailsToLocalStorage);
     }
   });
+
+  // Close Order Success Modal
+  const successModalCloseBtn = document.getElementById('success-modal-close-btn');
+  if (successModalCloseBtn) {
+    successModalCloseBtn.addEventListener('click', () => {
+      const modal = document.getElementById('order-success-modal');
+      if (modal) modal.classList.add('hide');
+      window.location.hash = ''; // Return home
+    });
+  }
 
   // Setup admin panel controls
   setupAdminListeners();
@@ -1079,7 +1127,7 @@ function openWhatsApp(url) {
   }, 300);
 }
 
-function completeCheckoutFlow(formElement, customerDetails, whatsappUrl) {
+function completeCheckoutFlow(formElement, customerDetails, whatsappUrl, orderId, totalAmount, deliverySlot) {
   // Save all form details (including slot & payment) to localStorage for autofill next time
   saveFormDetailsToLocalStorage();
 
@@ -1098,9 +1146,27 @@ function completeCheckoutFlow(formElement, customerDetails, whatsappUrl) {
   if (formElement) formElement.reset();
   prefillCheckoutForm();
 
-  // Show confirmation then redirect to WhatsApp
-  alert("Order placed successfully!\nWe are now redirecting you to WhatsApp to confirm your slot.");
-  openWhatsApp(whatsappUrl);
+  // Populate and open success modal
+  const successModal = document.getElementById('order-success-modal');
+  if (successModal) {
+    document.getElementById('success-order-id').innerText = orderId || '-';
+    document.getElementById('success-order-total').innerText = `₹${totalAmount}`;
+    document.getElementById('success-order-slot').innerText = deliverySlot || '-';
+    
+    const waBtn = document.getElementById('success-whatsapp-btn');
+    if (waBtn) waBtn.href = whatsappUrl;
+
+    successModal.classList.remove('hide');
+
+    // Auto-trigger WhatsApp redirection
+    setTimeout(() => {
+      openWhatsApp(whatsappUrl);
+    }, 1500);
+  } else {
+    // Fallback if modal is somehow missing
+    alert("Order placed successfully!\nWe are now redirecting you to WhatsApp to confirm your slot.");
+    openWhatsApp(whatsappUrl);
+  }
 }
 
 async function pollPaymentVerification(orderId, maxAttempts = 5, delay = 1000) {
@@ -1204,10 +1270,9 @@ async function handleCheckoutSubmit(e) {
             checkoutBtn.innerText = "Verifying payment...";
             const isVerified = await pollPaymentVerification(responseData.orderId);
             if (isVerified) {
-              completeCheckoutFlow(e.target, customerDetails, responseData.whatsappUrl);
+              completeCheckoutFlow(e.target, customerDetails, responseData.whatsappUrl, responseData.orderId, responseData.amount / 100, orderPayload.deliverySlot);
             } else {
-              alert("Payment confirmation received. Proceeding to WhatsApp to complete your slot booking.");
-              completeCheckoutFlow(e.target, customerDetails, responseData.whatsappUrl);
+              completeCheckoutFlow(e.target, customerDetails, responseData.whatsappUrl, responseData.orderId, responseData.amount / 100, orderPayload.deliverySlot);
             }
           },
           modal: { 
@@ -1220,7 +1285,7 @@ async function handleCheckoutSubmit(e) {
         const rzp1 = new Razorpay(options);
         rzp1.open();
       } else {
-        completeCheckoutFlow(e.target, customerDetails, responseData.whatsappUrl);
+        completeCheckoutFlow(e.target, customerDetails, responseData.whatsappUrl, responseData.order.id, responseData.order.totalAmount, orderPayload.deliverySlot);
       }
     }
   } catch (err) {
@@ -1424,6 +1489,10 @@ function setupAdminListeners() {
       const targetTab = tab.dataset.tab;
       document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById(targetTab).classList.add('active');
+
+      if (targetTab === 'admin-messages-tab') {
+        loadAdminMessages();
+      }
     });
   });
 
@@ -1689,6 +1758,118 @@ function updateUnreadOrdersCount() {
       badge.classList.add('hide');
     }
   }
+}
+
+// Manage Messages
+let adminMessages = [];
+
+async function loadAdminMessages() {
+  if (!state.adminToken) return;
+  try {
+    const res = await fetch(`${API_BASE}/admin/contact-messages`, {
+      headers: { 'Authorization': `Bearer ${state.adminToken}` }
+    });
+    if (res.ok) {
+      adminMessages = await res.json();
+      renderAdminMessagesTable();
+    }
+  } catch (err) {
+    console.error("Error loading contact messages:", err);
+  }
+}
+
+function renderAdminMessagesTable() {
+  const tableBody = document.getElementById('admin-messages-table-body');
+  const emptyState = document.getElementById('messages-empty-state');
+  
+  if (!tableBody) return;
+  tableBody.innerHTML = '';
+  
+  if (!adminMessages || adminMessages.length === 0) {
+    if (emptyState) emptyState.classList.remove('hide');
+    return;
+  }
+  
+  if (emptyState) emptyState.classList.add('hide');
+  
+  adminMessages.forEach(msg => {
+    const dateStr = new Date(msg.createdAt).toLocaleString();
+    
+    // Clean target phone
+    let rawPhone = (msg.phone || "").replace(/[^0-9]/g, '');
+    if (rawPhone.length === 10 && /^[6-9]/.test(rawPhone)) {
+      rawPhone = '91' + rawPhone;
+    }
+    const whatsappLink = `https://wa.me/${rawPhone}`;
+    const callLink = `tel:${msg.phone}`;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${dateStr}</td>
+      <td><strong>${escapeHTML(msg.name)}</strong></td>
+      <td>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span>${escapeHTML(msg.phone)}</span>
+          <div style="display: flex; gap: 8px; font-size: 0.8rem;">
+            <a href="${callLink}" style="color: var(--color-primary); text-decoration: none; display: flex; align-items: center; gap: 2px;">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M6.62 10.79a15.15 15.15 0 0 0 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+              Call
+            </a>
+            <a href="${whatsappLink}" target="_blank" style="color: var(--color-accent); text-decoration: none; display: flex; align-items: center; gap: 2px;">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+              WhatsApp
+            </a>
+          </div>
+        </div>
+      </td>
+      <td><div style="white-space: pre-wrap; max-width: 400px; word-break: break-word;">${escapeHTML(msg.message)}</div></td>
+      <td>
+        <button class="btn btn-secondary delete-msg-btn" data-id="${msg.id}" style="padding: 6px 12px; font-size: 0.85rem; border-radius: 4px;">
+          Delete
+        </button>
+      </td>
+    `;
+    
+    // Add event listener to delete button
+    tr.querySelector('.delete-msg-btn').addEventListener('click', () => {
+      if (confirm(`Are you sure you want to delete the message from ${msg.name}?`)) {
+        deleteAdminMessage(msg.id);
+      }
+    });
+
+    tableBody.appendChild(tr);
+  });
+}
+
+async function deleteAdminMessage(id) {
+  if (!state.adminToken) return;
+  try {
+    const res = await fetch(`${API_BASE}/admin/contact-messages/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${state.adminToken}` }
+    });
+    if (res.ok) {
+      adminMessages = adminMessages.filter(m => m.id !== id);
+      renderAdminMessagesTable();
+    } else {
+      alert("Failed to delete the message.");
+    }
+  } catch (err) {
+    console.error("Error deleting contact message:", err);
+  }
+}
+
+function escapeHTML(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/[&<>'"]/g, 
+    tag => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#39;',
+      '"': '&quot;'
+    }[tag] || tag)
+  );
 }
 
 function renderAdminOrdersTable() {
@@ -1971,12 +2152,42 @@ function openProductEditor(productId = null) {
 
 window.openProductEditor = openProductEditor;
 
-function fileToBase64(file) {
+function resizeAndCompressImage(file, maxWidth = 800, maxHeight = 800, quality = 0.75) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = error => reject(error);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
   });
 }
 
@@ -1998,7 +2209,7 @@ async function handleProductSaveSubmit(e) {
   
   if (file) {
     try {
-      const base64Data = await fileToBase64(file);
+      const base64Data = await resizeAndCompressImage(file, 800, 800, 0.75);
       const uploadRes = await fetch(`${API_BASE}/admin/upload-image`, {
         method: 'POST',
         headers: {
