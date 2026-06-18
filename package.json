@@ -16,13 +16,11 @@
     "express-rate-limit": "^8.5.2",
     "jsonwebtoken": "^9.0.2",
     "razorpay": "^2.9.6",
+    "sharp": "^0.35.1",
     "web-push": "^3.6.7"
   },
   "engines": {
     "node": ">=18.0.0"
   },
-  "private": true,
-  "devDependencies": {
-    "sharp": "^0.35.1"
-  }
+  "private": true
 }

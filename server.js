@@ -898,7 +898,7 @@ app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Upload Product Image
+// Upload Product Image — auto-converts to WebP for optimal performance
 app.post('/api/admin/upload-image', authenticateAdmin, async (req, res) => {
   const { imageBase64, filename } = req.body;
   if (!imageBase64 || !filename) {
@@ -911,14 +911,30 @@ app.post('/api/admin/upload-image', authenticateAdmin, async (req, res) => {
       return res.status(400).json({ error: "Invalid base64 image data format." });
     }
 
-    const mimeType = matches[1];
-    const buffer = Buffer.from(matches[2], 'base64');
-    
-    // Generate clean filename to avoid collision
-    const fileExt = path.extname(filename) || '.png';
-    const cleanFilename = `${Date.now()}_${Math.random().toString(36).slice(-5)}${fileExt}`;
+    const inputBuffer = Buffer.from(matches[2], 'base64');
 
-    const imageUrl = await db.uploadProductImage(cleanFilename, buffer, mimeType);
+    // ── Auto-convert to WebP for every upload ──────────────────────────────
+    // Regardless of what the client uploads (PNG, JPG, HEIC, etc.),
+    // we store it as a compressed WebP. Quality 82 is visually lossless
+    // but typically 70–90% smaller than the original.
+    let webpBuffer;
+    try {
+      const sharp = require('sharp');
+      webpBuffer = await sharp(inputBuffer)
+        .webp({ quality: 82, effort: 4 })
+        .toBuffer();
+    } catch (sharpErr) {
+      // sharp unavailable (shouldn't happen) — fall back to original
+      console.warn("sharp WebP conversion failed, storing original:", sharpErr.message);
+      webpBuffer = inputBuffer;
+    }
+    // ───────────────────────────────────────────────────────────────────────
+
+    // Always use .webp extension — original extension is discarded
+    const baseName = path.basename(filename, path.extname(filename));
+    const cleanFilename = `${Date.now()}_${Math.random().toString(36).slice(-5)}_${baseName}.webp`;
+
+    const imageUrl = await db.uploadProductImage(cleanFilename, webpBuffer, 'image/webp');
     res.json({ success: true, imageUrl });
   } catch (err) {
     console.error("Error in image upload API:", err);
