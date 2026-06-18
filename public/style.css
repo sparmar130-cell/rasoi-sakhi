@@ -373,7 +373,7 @@ button, input, select, textarea {
 .hero {
   position: relative;
   padding: var(--spacing-xl) var(--spacing-sm);
-  background-image: url('/assets/rasoi_sakhi_hero_background_custom.webp');
+  background-image: url('/assets/rasoi_sakhi_hero_background_custom.png');
   background-size: cover;
   background-position: center;
   min-height: 60vh;
@@ -403,6 +403,7 @@ button, input, select, textarea {
   text-align: center;
   position: relative;
   z-index: 1;
+  padding-top: 2.2rem; /* Shifts the hero text slightly down on mobile to clear the header */
 }
 
 .main-brand-title {
@@ -423,7 +424,6 @@ button, input, select, textarea {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-top: 1.5rem; /* Push down on mobile to clear fixed header */
   margin-bottom: var(--spacing-sm);
 }
 
@@ -2203,10 +2203,6 @@ button, input, select, textarea {
     padding: 0;
   }
 
-  .hero-badge {
-    margin-top: 0;
-  }
-
   .hero-container {
     display: flex;
     flex-direction: column;
@@ -2214,6 +2210,7 @@ button, input, select, textarea {
     justify-content: center;
     text-align: center;
     padding: 0 var(--spacing-md);
+    padding-top: 0; /* Reset top offset on desktop */
   }
 
   .main-brand-title {
