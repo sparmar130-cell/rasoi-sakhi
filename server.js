@@ -371,42 +371,40 @@ app.post('/api/orders', orderLimiter, async (req, res) => {
     }
     const whatsappUrl = `https://wa.me/${targetPhone}?text=${encodedMsg}`;
 
-    // Online Payment Handling with Razorpay/Simulation
+    // Online Payment Handling with Razorpay
     if (isOnlinePayment) {
+      if (!razorpay) {
+        return res.status(503).json({ error: "Online payments are currently unavailable. Please select Cash On Delivery." });
+      }
+
       let rzpOrderId = null;
-      if (razorpay) {
-        try {
-          const options = {
-            amount: Math.round(totalAmount * 100), // in paise
-            currency: "INR",
-            receipt: orderId
-          };
-          const rzpOrder = await razorpay.orders.create(options);
-          rzpOrderId = rzpOrder.id;
-        } catch (rzpErr) {
-          console.error("Error creating Razorpay order:", rzpErr);
-          return res.status(500).json({ 
-            error: "Failed to initiate payment gateway order.",
-            details: rzpErr.message || (rzpErr.error && rzpErr.error.description) || String(rzpErr)
-          });
-        }
-      } else {
-        // Simulation mode
-        rzpOrderId = `order_sim_${Date.now()}`;
+      try {
+        const options = {
+          amount: Math.round(totalAmount * 100), // in paise
+          currency: "INR",
+          receipt: orderId
+        };
+        const rzpOrder = await razorpay.orders.create(options);
+        rzpOrderId = rzpOrder.id;
+      } catch (rzpErr) {
+        console.error("Error creating Razorpay order:", rzpErr);
+        return res.status(500).json({ 
+          error: "Failed to initiate payment gateway order.",
+          details: rzpErr.message || (rzpErr.error && rzpErr.error.description) || String(rzpErr)
+        });
       }
 
       // Save mapping
       await db.savePaymentMapping(rzpOrderId, orderId, {
         amount: totalAmount,
         customerPhone,
-        customerName,
-        isSimulated: !razorpay
+        customerName
       });
 
       return res.json({
         success: true,
         paymentRequired: true,
-        keyId: rzpKeyId || 'rzp_test_placeholder_key_id',
+        keyId: rzpKeyId,
         amount: Math.round(totalAmount * 100),
         currency: "INR",
         razorpayOrderId: rzpOrderId,
@@ -439,31 +437,25 @@ app.post('/api/payments/webhook', async (req, res) => {
 
   console.log("Payment webhook event received:", req.body);
 
-// Webhook signature verification
-  if (webhookSecret) {
-    // Secret is configured — signature header is now REQUIRED
-    if (!signature) {
-      console.warn("Webhook rejected: RAZORPAY_WEBHOOK_SECRET is set but no x-razorpay-signature header was provided.");
-      return res.status(401).send("Webhook signature required.");
-    }
-    const crypto = require('crypto');
-    const shasum = crypto.createHmac('sha256', webhookSecret);
-    shasum.update(JSON.stringify(req.body));
-    const digest = shasum.digest('hex');
-    if (digest !== signature) {
-      console.warn("Invalid Razorpay webhook signature detected! Rejecting request.");
-      return res.status(400).send("Invalid webhook signature.");
-    }
-    console.log("Razorpay webhook signature verified successfully.");
-  } else if (req.body && req.body.event && !req.body.razorpayOrderId) {
-    // Looks like a real Razorpay webhook payload but no secret is configured — reject
-    // to prevent anyone from forging payment confirmations
-    console.warn("SECURITY: Received Razorpay-format webhook but RAZORPAY_WEBHOOK_SECRET env var is not set. Rejecting to prevent abuse.");
+  if (!webhookSecret) {
+    console.warn("SECURITY: Webhook received but RAZORPAY_WEBHOOK_SECRET is not configured on the server.");
     return res.status(503).json({ error: "Webhook secret not configured on server. Set RAZORPAY_WEBHOOK_SECRET in environment variables." });
-  } else {
-    // Simulation-format request (has razorpayOrderId field) — allow for local testing
-    console.log("No webhook secret configured. Allowing simulation webhook request (razorpayOrderId format).");
   }
+
+  if (!signature) {
+    console.warn("Webhook rejected: RAZORPAY_WEBHOOK_SECRET is set but no x-razorpay-signature header was provided.");
+    return res.status(400).send("Webhook signature required.");
+  }
+
+  const crypto = require('crypto');
+  const shasum = crypto.createHmac('sha256', webhookSecret);
+  shasum.update(JSON.stringify(req.body));
+  const digest = shasum.digest('hex');
+  if (digest !== signature) {
+    console.warn("Invalid Razorpay webhook signature detected! Rejecting request.");
+    return res.status(400).send("Invalid webhook signature.");
+  }
+  console.log("Razorpay webhook signature verified successfully.");
 
   try {
     let rzpOrderId = null;
@@ -477,10 +469,6 @@ app.post('/api/payments/webhook', async (req, res) => {
       } else if (req.body.payload && req.body.payload.payment) {
         rzpOrderId = req.body.payload.payment.entity.order_id;
       }
-    } else {
-      // Simulated direct webhook call for local debugging
-      rzpOrderId = req.body.razorpayOrderId;
-      eventName = 'order.paid';
     }
 
     if (!rzpOrderId) {
@@ -491,7 +479,7 @@ app.post('/api/payments/webhook', async (req, res) => {
     console.log(`Processing webhook payment for Razorpay Order ID: ${rzpOrderId}, Event: ${eventName}`);
 
     // Only process successful payments
-    if (eventName === 'order.paid' || eventName === 'payment.captured' || !req.body.event) {
+    if (eventName === 'order.paid' || eventName === 'payment.captured') {
       const mapping = await db.getPaymentMapping(rzpOrderId);
       if (!mapping) {
         console.error(`No local order mapping found for Razorpay Order ID: ${rzpOrderId}`);
@@ -544,22 +532,6 @@ app.get('/api/orders/:id/verify-payment', async (req, res) => {
 
     if (order.status !== "Payment Pending") {
       return res.json({ success: true, verified: true, status: order.status });
-    }
-
-    // Check mapping to see if this is a simulated transaction
-    const mapping = await db.getPaymentMappingByOrderId(orderId);
-    const isSimulated = mapping ? !!mapping.isSimulated : false;
-
-    // DX Feature: auto-resolve simulated transactions on client request
-    if (isSimulated) {
-      console.log(`Auto-verifying simulated payment order ${orderId} on request.`);
-      const updatedOrder = await db.updateOrderStatus(orderId, "Payment Received");
-      
-      const settings = await db.getSettings();
-      if (settings.googleSheetsWebhookUrl && updatedOrder) {
-        triggerGoogleSheetsWebhook(settings.googleSheetsWebhookUrl, updatedOrder);
-      }
-      return res.json({ success: true, verified: true, status: "Payment Received" });
     }
 
     // Otherwise, still waiting for the real webhook transaction
