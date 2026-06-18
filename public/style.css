@@ -423,6 +423,7 @@ button, input, select, textarea {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+  margin-top: 1.5rem; /* Push down on mobile to clear fixed header */
   margin-bottom: var(--spacing-sm);
 }
 
@@ -2200,6 +2201,10 @@ button, input, select, textarea {
     height: 85vh;
     min-height: 600px;
     padding: 0;
+  }
+
+  .hero-badge {
+    margin-top: 0;
   }
 
   .hero-container {
