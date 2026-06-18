@@ -2431,20 +2431,17 @@ function populateDeliverySlots() {
   const allSlots = [
     {
       value: "Morning (6:00 AM – 7:30 AM)",
-      label: "Morning  —  6:00 AM to 7:30 AM",
-      note:  "Not Available  (order tonight after 6 PM)",
+      label: "Morning  —  6:00 AM to 7:30 AM  (order tonight after 6 PM)",
       available: currentHour >= 18   // orderable only at night
     },
     {
       value: "Afternoon (11:00 AM – 12:30 PM)",
-      label: "Afternoon  —  11:00 AM to 12:30 PM",
-      note:  "Not Available  (order by 10 AM)",
+      label: "Afternoon  —  11:00 AM to 12:30 PM  (order by 10 AM)",
       available: currentHour < 10   // cut-off: 10 AM
     },
     {
       value: "Evening (5:00 PM – 6:30 PM)",
-      label: "Evening  —  5:00 PM to 6:30 PM",
-      note:  "Not Available  (order by 4 PM)",
+      label: "Evening  —  5:00 PM to 6:30 PM  (order by 4 PM)",
       available: currentHour < 16   // cut-off: 4 PM
     }
   ];
@@ -2458,7 +2455,8 @@ function populateDeliverySlots() {
   allSlots.forEach(slot => {
     const el = document.createElement('option');
     el.value = slot.available ? slot.value : '';
-    el.textContent = slot.available ? slot.label : slot.note;
+    // Always show full timing + cut-off; append "— Not Available" if closed
+    el.textContent = slot.available ? slot.label : slot.label + '  —  Not Available';
     el.disabled = !slot.available;
     slotSelect.appendChild(el);
   });
